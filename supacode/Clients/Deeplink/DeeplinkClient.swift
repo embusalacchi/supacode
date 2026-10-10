@@ -4,6 +4,10 @@ import SupacodeSettingsShared
 
 struct DeeplinkClient: Sendable {
   var parse: @Sendable (URL) -> Deeplink?
+
+  nonisolated static func loggingDescription(_ url: URL) -> String {
+    url.host == "activate" ? "supacode://activate" : url.absoluteString
+  }
 }
 
 extension DeeplinkClient: DependencyKey {
@@ -29,7 +33,7 @@ private nonisolated enum DeeplinkParser {
       return nil
     }
     guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-      logger.warning("Failed to parse URL components: \(url)")
+      logger.warning("Failed to parse URL components: \(DeeplinkClient.loggingDescription(url))")
       return nil
     }
     // For custom-scheme URLs, the host acts as the top-level route (e.g., "worktree", "repo", "settings").
@@ -43,6 +47,11 @@ private nonisolated enum DeeplinkParser {
     let queryItems = components.queryItems ?? []
 
     switch host {
+    case "activate":
+      guard let key = queryItems.first(where: { $0.name == "key" })?.value,
+        let credential = LicenseCredential(key)
+      else { return nil }
+      return .activateLicense(key: credential.rawValue)
     case "worktree":
       // Rewrapped here so the action parsers stay unaware of the dispatch flag.
       guard

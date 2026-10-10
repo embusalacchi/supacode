@@ -435,7 +435,9 @@ extension RepositoriesFeature {
     baseRefSource: WorktreeCreationBaseRefSource,
     upstream: WorktreeUpstreamPreference,
     fetchOrigin: Bool,
-    placement: WorktreePlacementOverride?
+    placement: WorktreePlacementOverride?,
+    pendingID: Worktree.ID,
+    permit: LicenseCreationPermit? = nil
   ) -> Effect<Action> {
     // swiftlint:enable function_parameter_count
     guard let host = repository.host else { return .none }
@@ -443,7 +445,13 @@ extension RepositoriesFeature {
     @Shared(.repositorySettings(repoRoot, host: host)) var remoteRepositorySettings
     let selectedBaseRef = remoteRepositorySettings.worktreeBaseRef
     let existingNames = Set(repository.worktrees.map { $0.name.lowercased() })
+    @Dependency(LicenseClient.self) var licensing
     return .run { send in
+      let finishFailure: @Sendable (String) async -> Void = { message in
+        if let permit { await licensing.cancelCreation(permit) }
+        await send(
+          .worktreeCreationRejected(pendingID: pendingID, message: message, licenseRequired: false))
+      }
       let client = GitClient(shell: .ssh(host: host))
       let remoteBranches = (try? await client.localBranchNames(for: repoRoot)) ?? []
       let existing = existingNames.union(remoteBranches)
@@ -452,25 +460,14 @@ extension RepositoriesFeature {
       case .random:
         let generated = await MainActor.run { WorktreeNameGenerator.nextName(excluding: existing) }
         guard let generated else {
-          await send(
-            .presentAlert(
-              title: "No available worktree names",
-              message: "All default adjective-animal names are already in use. "
-                + "Delete a worktree or rename a branch, then try again."
-            )
-          )
+          await finishFailure("No available worktree names.")
           return
         }
         name = generated
       case .explicit(let explicit):
         let trimmed = explicit.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !trimmed.contains(where: \.isWhitespace) else {
-          await send(
-            .presentAlert(
-              title: "Branch name invalid",
-              message: "Enter a branch name without spaces to create a worktree."
-            )
-          )
+          await finishFailure("Enter a branch name without spaces to create a worktree.")
           return
         }
         name = trimmed
@@ -492,22 +489,31 @@ extension RepositoriesFeature {
       if case .branch(let upstreamRef) = upstream {
         do {
           guard try await client.upstreamBranchExists(upstreamRef, for: repoRoot) else {
-            await send(
-              .presentAlert(
-                title: "Upstream branch not found",
-                message: "'\(upstreamRef)' isn't a local or remote-tracking branch in this repository."
-              )
-            )
+            await finishFailure("Upstream branch not found: \(upstreamRef)")
             return
           }
         } catch {
-          await send(
-            .presentAlert(title: "Unable to create worktree", message: error.localizedDescription))
+          await finishFailure(error.localizedDescription)
           return
         }
       }
       do {
-        try await client.createGitWorktree(in: repoRoot, name: name, baseRef: baseRef, worktreePath: worktreePath)
+        if let permit {
+          try await licensing.claimCreationResource(
+            permit, "\(repository.id.rawValue):\(name.lowercased())", nil)
+        }
+        try await client.createGitWorktree(
+          in: repoRoot, name: name, baseRef: baseRef, worktreePath: worktreePath)
+        if let permit {
+          do {
+            let snapshot = try await licensing.completeCreation(permit)
+            await send(.delegate(.licenseSnapshotUpdated(snapshot)))
+          } catch {
+            await send(
+              .presentAlert(
+                title: "License data could not be saved", message: error.localizedDescription))
+          }
+        }
         // The worktree exists either way; a failed tracking update surfaces as
         // an alert instead of failing the creation.
         do {
@@ -523,9 +529,17 @@ extension RepositoriesFeature {
           await send(
             .presentAlert(title: "Worktree created, upstream not updated", message: error.localizedDescription))
         }
+        let location = WorktreeLocation.remote(
+          host,
+          workingDirectory: RepositoryLocation.normalizedRemotePath(
+            worktreePath.path(percentEncoded: false)),
+          repositoryRoot: RepositoryLocation.normalizedRemotePath(
+            repoRoot.path(percentEncoded: false))
+        )
+        await send(.remoteWorktreeCreationCompleted(pendingID: pendingID, worktreeID: location.id))
         await send(.loadPersistedRepositories)
       } catch {
-        await send(.presentAlert(title: "Unable to create worktree", message: error.localizedDescription))
+        await finishFailure(error.localizedDescription)
       }
     }
   }
