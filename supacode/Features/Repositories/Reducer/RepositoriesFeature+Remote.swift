@@ -504,16 +504,7 @@ extension RepositoriesFeature {
         }
         try await client.createGitWorktree(
           in: repoRoot, name: name, baseRef: baseRef, worktreePath: worktreePath)
-        if let permit {
-          do {
-            let snapshot = try await licensing.completeCreation(permit)
-            await send(.delegate(.licenseSnapshotUpdated(snapshot)))
-          } catch {
-            await send(
-              .presentAlert(
-                title: "License data could not be saved", message: error.localizedDescription))
-          }
-        }
+        await completeLicensePermit(permit, send: send)
         // The worktree exists either way; a failed tracking update surfaces as
         // an alert instead of failing the creation.
         do {

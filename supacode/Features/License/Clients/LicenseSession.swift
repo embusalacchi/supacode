@@ -106,9 +106,9 @@ actor LicenseSession {
     else {
       throw LicenseError.creationInProgress
     }
-    if reservation.chargesTrial, let localDirectory {
-      let path = localDirectory.standardizedFileURL.resolvingSymlinksInPath().path(
-        percentEncoded: false)
+    let localPath = localDirectory?.standardizedFileURL.resolvingSymlinksInPath().path(
+      percentEncoded: false)
+    if reservation.chargesTrial, let path = localPath {
       guard !reservations.contains(where: { $0.key != permit.id && $0.value.localPath == path })
       else {
         throw LicenseError.creationInProgress
@@ -123,8 +123,7 @@ actor LicenseSession {
     }
     reservations[permit.id] = Reservation(
       chargesTrial: reservation.chargesTrial, resource: resource,
-      localPath: localDirectory?.standardizedFileURL.resolvingSymlinksInPath().path(
-        percentEncoded: false))
+      localPath: localPath)
   }
 
   func cancelCreation(_ permit: LicenseCreationPermit) {

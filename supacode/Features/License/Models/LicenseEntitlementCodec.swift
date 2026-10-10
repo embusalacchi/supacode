@@ -3,7 +3,7 @@ import Foundation
 
 nonisolated struct LicenseEntitlementCodec: Sendable {
   private struct Claims: Decodable {
-    let v: Int
+    let version: Int
     let lid: String
     let did: String
     let status: LicenseEntitlement.Status
@@ -11,6 +11,11 @@ nonisolated struct LicenseEntitlementCodec: Sendable {
     let rev: Int
     let iat: Int64
     let reason: String?
+
+    enum CodingKeys: String, CodingKey {
+      case version = "v"
+      case lid, did, status, upd, rev, iat, reason
+    }
   }
 
   private let publicKey: Curve25519.Signing.PublicKey
@@ -32,7 +37,7 @@ nonisolated struct LicenseEntitlementCodec: Sendable {
       signature.count == 64,
       publicKey.isValidSignature(signature, for: payload),
       let claims = try? JSONDecoder().decode(Claims.self, from: payload),
-      claims.v == 1,
+      claims.version == 1,
       claims.did == expectedDeviceID,
       claims.lid == expectedLicenseID,
       claims.rev >= 0,
@@ -47,8 +52,7 @@ nonisolated struct LicenseEntitlementCodec: Sendable {
       updatesThrough: claims.upd,
       revision: claims.rev,
       issuedAt: claims.iat,
-      revocationReason: claims.reason,
-      signedToken: token
+      revocationReason: claims.reason
     )
   }
 

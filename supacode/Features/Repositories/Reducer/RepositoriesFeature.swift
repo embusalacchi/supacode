@@ -2534,16 +2534,17 @@ struct RepositoriesFeature {
   }
 
   private func completeLicensePermit(_ permit: LicenseCreationPermit?) -> Effect<Action> {
-    guard let permit else { return .none }
-    return .run { send in
-      do {
-        let snapshot = try await licenseClient.completeCreation(permit)
-        await send(.delegate(.licenseSnapshotUpdated(snapshot)))
-      } catch {
-        await send(
-          .presentAlert(
-            title: "License data could not be saved", message: error.localizedDescription))
-      }
+    guard permit != nil else { return .none }
+    return .run { send in await completeLicensePermit(permit, send: send) }
+  }
+
+  func completeLicensePermit(_ permit: LicenseCreationPermit?, send: Send<Action>) async {
+    guard let permit else { return }
+    do {
+      let snapshot = try await licenseClient.completeCreation(permit)
+      await send(.delegate(.licenseSnapshotUpdated(snapshot)))
+    } catch {
+      await send(.presentAlert(title: "License data could not be saved", message: error.localizedDescription))
     }
   }
 
@@ -5349,15 +5350,10 @@ struct RepositoriesFeature {
         )
       }
       if let permit {
-        if FileManager.default.fileExists(atPath: worktree.workingDirectory.appending(path: ".git").path(percentEncoded: false)) {
-          do {
-            let snapshot = try await licenseClient.completeCreation(permit)
-            await send(.delegate(.licenseSnapshotUpdated(snapshot)))
-          } catch {
-            await send(
-              .presentAlert(
-                title: "License data could not be saved", message: error.localizedDescription))
-          }
+        if FileManager.default.fileExists(
+          atPath: worktree.workingDirectory.appending(path: ".git").path(percentEncoded: false))
+        {
+          await completeLicensePermit(permit, send: send)
         } else {
           await licenseClient.cancelCreation(permit)
         }

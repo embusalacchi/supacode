@@ -66,38 +66,42 @@ private nonisolated enum DeeplinkParser {
     case "help":
       return .help
     case "settings":
-      // settings/repo/<encoded-repo-id>[/scripts] → open repository settings.
-      if pathSegments.first == "repo" {
-        guard pathSegments.count >= 2,
-          let rawRepositoryID = pathSegments[1].removingPercentEncoding, !rawRepositoryID.isEmpty
-        else {
-          logger.warning("Settings repo deeplink missing or invalid repository ID.")
-          return nil
-        }
-        let repositoryID = RepositoryID(rawRepositoryID)
-        if pathSegments.count >= 3 {
-          guard pathSegments[2] == "scripts" else {
-            logger.warning("Unrecognized settings repo subsection: \(pathSegments[2]).")
-            return nil
-          }
-          return .settingsRepoScripts(repositoryID: repositoryID)
-        }
-        return .settingsRepo(repositoryID: repositoryID)
-      }
-      let section: Deeplink.DeeplinkSettingsSection? = pathSegments.first.flatMap { raw in
-        // Legacy `codingAgents` URLs still route to the developer pane.
-        if raw == "codingAgents" { return .developer }
-        guard let parsed = Deeplink.DeeplinkSettingsSection(rawValue: raw) else {
-          logger.warning("Unrecognized settings section: \(raw).")
-          return nil
-        }
-        return parsed
-      }
-      return .settings(section: section)
+      return parseSettings(pathSegments: pathSegments)
     default:
       logger.warning("Unrecognized deeplink host: \(host)")
       return nil
     }
+  }
+
+  private static func parseSettings(pathSegments: [String]) -> Deeplink? {
+    // settings/repo/<encoded-repo-id>[/scripts] → open repository settings.
+    if pathSegments.first == "repo" {
+      guard pathSegments.count >= 2,
+        let rawRepositoryID = pathSegments[1].removingPercentEncoding, !rawRepositoryID.isEmpty
+      else {
+        logger.warning("Settings repo deeplink missing or invalid repository ID.")
+        return nil
+      }
+      let repositoryID = RepositoryID(rawRepositoryID)
+      if pathSegments.count >= 3 {
+        guard pathSegments[2] == "scripts" else {
+          logger.warning("Unrecognized settings repo subsection: \(pathSegments[2]).")
+          return nil
+        }
+        return .settingsRepoScripts(repositoryID: repositoryID)
+      }
+      return .settingsRepo(repositoryID: repositoryID)
+    }
+    let section: Deeplink.DeeplinkSettingsSection? = pathSegments.first.flatMap { raw in
+      // Legacy `codingAgents` URLs still route to the developer pane.
+      if raw == "codingAgents" { return .developer }
+      guard let parsed = Deeplink.DeeplinkSettingsSection(rawValue: raw) else {
+        logger.warning("Unrecognized settings section: \(raw).")
+        return nil
+      }
+      return parsed
+    }
+    return .settings(section: section)
   }
 
   /// Parse an explicit-opt-in bool flag: only `<name>=true` returns true, so a
