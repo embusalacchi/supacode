@@ -436,8 +436,7 @@ extension RepositoriesFeature {
     upstream: WorktreeUpstreamPreference,
     fetchOrigin: Bool,
     placement: WorktreePlacementOverride?,
-    pendingID: Worktree.ID,
-    permit: LicenseCreationPermit? = nil
+    pendingID: Worktree.ID
   ) -> Effect<Action> {
     // swiftlint:enable function_parameter_count
     guard let host = repository.host else { return .none }
@@ -445,14 +444,14 @@ extension RepositoriesFeature {
     @Shared(.repositorySettings(repoRoot, host: host)) var remoteRepositorySettings
     let selectedBaseRef = remoteRepositorySettings.worktreeBaseRef
     let existingNames = Set(repository.worktrees.map { $0.name.lowercased() })
-    @Dependency(LicenseClient.self) var licensing
+    @Dependency(ShellClient.self) var shellClient
+    let shell = ShellClient.ssh(host: host, base: shellClient)
     return .run { send in
       let finishFailure: @Sendable (String) async -> Void = { message in
-        if let permit { await licensing.cancelCreation(permit) }
         await send(
           .worktreeCreationRejected(pendingID: pendingID, message: message, licenseRequired: false))
       }
-      let client = GitClient(shell: .ssh(host: host))
+      let client = GitClient(shell: shell)
       let remoteBranches = (try? await client.localBranchNames(for: repoRoot)) ?? []
       let existing = existingNames.union(remoteBranches)
       let name: String
@@ -477,7 +476,7 @@ extension RepositoriesFeature {
       // local-style default (alongside the repo root on the host). The leaf is
       // the prompt's worktree-name override, falling back to the branch name.
       let parentDirectory = await Self.remoteWorktreeParentDirectory(
-        host: host, repoRoot: repoRoot, placementPath: placement?.path)
+        host: host, repoRoot: repoRoot, placementPath: placement?.path, shell: shell)
       let leaf = Self.remoteWorktreeLeaf(nameOverride: placement?.name, branchName: name)
       let worktreePath = parentDirectory.appending(path: leaf, directoryHint: .isDirectory)
       let baseRef = await Self.resolveRemoteBaseRef(
@@ -498,13 +497,8 @@ extension RepositoriesFeature {
         }
       }
       do {
-        if let permit {
-          try await licensing.claimCreationResource(
-            permit, "\(repository.id.rawValue):\(name.lowercased())", nil)
-        }
         try await client.createGitWorktree(
           in: repoRoot, name: name, baseRef: baseRef, worktreePath: worktreePath)
-        await completeLicensePermit(permit, send: send)
         // The worktree exists either way; a failed tracking update surfaces as
         // an alert instead of failing the creation.
         do {

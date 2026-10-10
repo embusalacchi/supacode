@@ -1924,6 +1924,7 @@ struct RepositoriesFeature {
       ):
         if licenseClient.isEnforced, permit == nil,
           let repository = state.repositories[id: repositoryID], repository.isGitRepository,
+          repository.host == nil,
           state.removingRepositoryIDs[repositoryID] == nil
         {
           let resource: String? =
@@ -2010,8 +2011,7 @@ struct RepositoriesFeature {
             upstream: upstream,
             fetchOrigin: fetchOrigin,
             placement: placement,
-            pendingID: providedPendingID ?? WorktreeID("license-remote-\(uuid().uuidString)"),
-            permit: permit
+            pendingID: providedPendingID ?? WorktreeID("\(WorktreeID.pendingPrefix)\(uuid().uuidString)")
           )
         }
         let previousSelection = state.selectedWorktreeID
@@ -2538,7 +2538,7 @@ struct RepositoriesFeature {
     return .run { send in await completeLicensePermit(permit, send: send) }
   }
 
-  func completeLicensePermit(_ permit: LicenseCreationPermit?, send: Send<Action>) async {
+  private func completeLicensePermit(_ permit: LicenseCreationPermit?, send: Send<Action>) async {
     guard let permit else { return }
     do {
       let snapshot = try await licenseClient.completeCreation(permit)

@@ -251,7 +251,7 @@ struct LicenseTests {
     }
   }
 
-  @Test(.dependencies) func exhaustedAllowanceNeverStartsGitCreation() async {
+  @Test(.dependencies) func exhaustedAllowanceNeverStartsLocalGitCreation() async {
     let repository = Repository(
       location: .local(URL(fileURLWithPath: "/tmp/license-test-repository")), kind: .git,
       name: "Test", worktrees: []
@@ -279,6 +279,80 @@ struct LicenseTests {
     await store.receive(\.delegate)
     #expect(store.state.pendingWorktrees.isEmpty)
     #expect(calls.value == 0)
+  }
+
+  @Test(.dependencies, arguments: [0, 5], [false, true])
+  func sshCreationDoesNotUseTheLocalAllowance(trialCreations: Int, creationFails: Bool) async {
+    let host = RemoteHost(alias: "license-test-host")
+    let repository = Repository(
+      location: .remote(host, path: "/home/me/repo"), kind: .git,
+      name: "Test", worktrees: [])
+    var state = RepositoriesFeature.State()
+    state.repositories = [repository]
+    let stored = LockIsolated(LicenseRecord(trialCreations: trialCreations))
+    let session = Self.session(stored: stored)
+    let licenseCalls = LockIsolated(0)
+    let commands = LockIsolated<[String]>([])
+    let store = TestStore(initialState: state) {
+      RepositoriesFeature().worktreeCreateInRepoReducer
+    } withDependencies: {
+      $0[LicenseClient.self].isEnforced = true
+      $0[LicenseClient.self].authorizeCreation = { resource in
+        licenseCalls.withValue { $0 += 1 }
+        return try await session.authorizeCreation(resource: resource)
+      }
+      $0[LicenseClient.self].claimCreationResource = { permit, resource, directory in
+        licenseCalls.withValue { $0 += 1 }
+        try await session.claimCreationResource(permit, resource: resource, localDirectory: directory)
+      }
+      $0[LicenseClient.self].completeCreation = { permit in
+        licenseCalls.withValue { $0 += 1 }
+        return try await session.completeCreation(permit)
+      }
+      $0[LicenseClient.self].cancelCreation = { permit in
+        licenseCalls.withValue { $0 += 1 }
+        await session.cancelCreation(permit)
+      }
+      $0.shellClient.run = { executable, arguments, directory in
+        #expect(executable.path == "/usr/bin/ssh")
+        #expect(directory == nil)
+        let command = arguments.last ?? ""
+        commands.withValue { $0.append(command) }
+        if creationFails, command.contains("worktree"), command.contains("add") {
+          throw ShellClientError(command: command, stdout: "", stderr: "Remote creation failed", exitCode: 1)
+        }
+        return ShellOutput(stdout: "", stderr: "", exitCode: 0)
+      }
+    }
+    let pendingID: Worktree.ID = "pending:ssh-license-test"
+    await store.send(
+      .createWorktreeInRepository(
+        repositoryID: repository.id, nameSource: .explicit("feature"),
+        baseRefSource: .explicit("HEAD"), fetchOrigin: false,
+        placement: WorktreePlacementOverride(path: "/home/me/worktrees"), pendingID: pendingID))
+    if creationFails {
+      let error = GitClientError.commandFailed(
+        command: "/usr/bin/env git -C /home/me/repo worktree add /home/me/worktrees/feature/ -b feature HEAD",
+        message: "stderr:\nRemote creation failed")
+      await store.receive(\.worktreeCreationRejected) {
+        $0.alert = AlertState {
+          TextState("Unable to create worktree")
+        } actions: {
+          ButtonState(role: .cancel) { TextState("OK") }
+        } message: {
+          TextState(error.localizedDescription)
+        }
+      }
+    } else {
+      await store.receive(\.remoteWorktreeCreationCompleted)
+      await store.receive(\.loadPersistedRepositories)
+    }
+    await store.finish()
+    #expect(commands.value.contains { $0.contains("worktree") && $0.contains("/home/me/worktrees/feature") })
+    #expect(licenseCalls.value == 0)
+    #expect(stored.value.trialCreations == trialCreations)
+    #expect(stored.value.pendingWorktreePaths == nil)
+    #expect(store.state.licensePermits.isEmpty)
   }
 
   @Test func activationLinksAreParsedAndRedacted() throws {

@@ -55,7 +55,7 @@ nonisolated enum LicenseError: Error, Equatable, LocalizedError, Sendable {
   var errorDescription: String? {
     switch self {
     case .licenseRequired:
-      "Your five free worktree creations have been used. Activate a Supacode license to create more."
+      "Your five free local worktree creations have been used. Activate a license to create more. SSH creation is free."
     case .invalidKey:
       "Enter a valid Supacode license key."
     case .invalidEntitlement:
@@ -67,7 +67,7 @@ nonisolated enum LicenseError: Error, Equatable, LocalizedError, Sendable {
     case .creationInProgress:
       "A worktree with this branch is already being created."
     case .trialCreationsPending:
-      "Your remaining free worktree creations are in progress. Wait for them to finish, then try again."
+      "Your remaining free local worktree creations are in progress. Wait for them to finish, then try again."
     case .staleOperation:
       "The license changed while this operation was running. Try again."
     case .service(let message):
