@@ -6,38 +6,6 @@ struct LicenseSettingsView: View {
 
   var body: some View {
     Form {
-      Section("Supacode license") {
-        if store.snapshot.isDevelopmentBuild {
-          Text("Development builds have unlimited worktree creation.")
-            .foregroundStyle(.secondary)
-        } else if store.snapshot.ownsCurrentRelease {
-          Label("This Mac is licensed", systemImage: "checkmark.seal")
-          if let end = store.snapshot.entitlement?.updatesThrough {
-            LabeledContent("Updates included through", value: end.rawValue)
-          }
-        } else {
-          Text("\(store.snapshot.remainingCreations) free worktree creations remaining")
-            .font(.headline)
-          Text(
-            "Create five new worktrees for free. A license unlocks unlimited creation. "
-              + "Existing worktrees and terminals stay available."
-          )
-          .foregroundStyle(.secondary)
-          if store.snapshot.entitlement?.status == .active {
-            Text(
-              "This release is newer than your included updates. "
-                + "Renew updates or download an owned release from your license portal."
-            )
-            .foregroundStyle(.secondary)
-          }
-        }
-        Text(
-          "$99 USD for perpetual use on one Mac and one year of updates. "
-            + "Optional updates renewal: $59 USD. Tax may apply."
-        )
-        .foregroundStyle(.secondary)
-      }
-
       if store.snapshot.entitlement?.status == .active {
         Section {
           Button("Deactivate This Mac") { store.send(.deactivate) }
