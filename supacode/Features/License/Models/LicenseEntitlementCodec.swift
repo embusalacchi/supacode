@@ -39,7 +39,8 @@ nonisolated struct LicenseEntitlementCodec: Sendable {
       signature.count == 64,
       publicKey.isValidSignature(signature, for: payload),
       let claims = try? JSONDecoder().decode(Claims.self, from: payload),
-      claims.version == 1,
+      (claims.version == 1 && claims.team != true && claims.lease == nil)
+        || (claims.version == 2 && claims.team == true),
       claims.did == expectedDeviceID,
       claims.lid == expectedLicenseID,
       claims.rev >= 0,

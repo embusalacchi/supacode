@@ -74,7 +74,9 @@ actor LicenseSession {
     if let resource, reservations.values.contains(where: { $0.resource == resource }) {
       throw LicenseError.creationInProgress
     }
-    if snapshot.entitlement?.isTeam == true, !snapshot.entitlement!.teamLeaseValid {
+    if snapshot.entitlement?.status == .active,
+      snapshot.entitlement?.isTeam == true, !snapshot.entitlement!.teamLeaseValid
+    {
       throw LicenseError.teamLeaseExpired
     }
     let chargesTrial = isEnforced && !snapshot.ownsCurrentRelease

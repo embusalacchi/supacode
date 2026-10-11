@@ -207,6 +207,15 @@ struct LicenseTests {
     #expect(stored.value.trialCreations == 5)
   }
 
+  @Test func teamEntitlementsRequireTheTeamProtocolVersion() async throws {
+    let signingKey = Curve25519.Signing.PrivateKey()
+    let token = try Self.token(signingKey: signingKey, team: true, lease: 2, version: 1)
+    let stored = LockIsolated(LicenseRecord(key: Self.key, token: token))
+    let session = Self.session(
+      stored: stored, publicKey: signingKey.publicKey.rawRepresentation)
+    #expect(try await session.load().entitlement == nil)
+  }
+
   @Test func aNewerUnownedReleaseRequiresActivationOrRenewal() async throws {
     let signingKey = Curve25519.Signing.PrivateKey()
     let token = try Self.token(signingKey: signingKey, updatesThrough: "2026-08-01")
@@ -415,10 +424,11 @@ struct LicenseTests {
 
   private nonisolated static func token(
     signingKey: Curve25519.Signing.PrivateKey, updatesThrough: String = "2027-10-10",
-    team: Bool = false, lease: Int64? = nil
+    team: Bool = false, lease: Int64? = nil, version: Int? = nil
   ) throws -> String {
     var claims: [String: Any] = [
-      "v": 1, "lid": String(repeating: "0", count: 32), "did": Self.device.id,
+      "v": version ?? (team ? 2 : 1), "lid": String(repeating: "0", count: 32),
+      "did": Self.device.id,
       "status": "active", "upd": updatesThrough, "rev": 1, "iat": 1,
     ]
     if team {
