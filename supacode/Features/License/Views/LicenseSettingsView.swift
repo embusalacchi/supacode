@@ -6,7 +6,7 @@ struct LicenseSettingsView: View {
 
   var body: some View {
     Form {
-      if store.snapshot.entitlement?.status == .active {
+      if store.snapshot.hasUsableActiveEntitlement {
         Section {
           Button("Deactivate This Mac") { store.send(.deactivate) }
             .disabled(store.isBusy)
@@ -14,6 +14,13 @@ struct LicenseSettingsView: View {
           Button("Refresh License") { store.send(.refresh) }
             .disabled(store.isBusy)
             .help("Check the license server for renewed updates or license changes.")
+        }
+      } else if store.snapshot.entitlement?.isTeam == true {
+        Section {
+          Text("This Team seat needs an online refresh before it can create more worktrees.")
+          Button("Refresh License") { store.send(.refresh) }
+            .disabled(store.isBusy)
+            .help("Check the license server for renewed Team access.")
         }
       } else {
         Section("Activate") {

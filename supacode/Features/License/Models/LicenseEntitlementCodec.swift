@@ -11,10 +11,12 @@ nonisolated struct LicenseEntitlementCodec: Sendable {
     let rev: Int
     let iat: Int64
     let reason: String?
+    let team: Bool?
+    let lease: Int64?
 
     enum CodingKeys: String, CodingKey {
       case version = "v"
-      case lid, did, status, upd, rev, iat, reason
+      case lid, did, status, upd, rev, iat, reason, team, lease
     }
   }
 
@@ -52,18 +54,22 @@ nonisolated struct LicenseEntitlementCodec: Sendable {
       updatesThrough: claims.upd,
       revision: claims.rev,
       issuedAt: claims.iat,
-      revocationReason: claims.reason
+      revocationReason: claims.reason,
+      isTeam: claims.team == true,
+      teamLeaseUntil: claims.lease
     )
   }
 
   private func validClaims(_ claims: Claims) -> Bool {
+    guard claims.team != false else { return false }
     switch claims.status {
     case .active:
-      return claims.upd != nil && claims.reason == nil
+      guard claims.upd != nil, claims.reason == nil else { return false }
+      return claims.team != true || (claims.lease ?? 0) >= claims.iat
     case .revoked:
-      return claims.upd == nil && claims.reason?.isEmpty == false
+      return claims.upd == nil && claims.reason?.isEmpty == false && claims.lease == nil
     case .deactivated, .transferred:
-      return claims.upd == nil && claims.reason == nil
+      return claims.upd == nil && claims.reason == nil && claims.lease == nil
     }
   }
 

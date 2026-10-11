@@ -29,7 +29,12 @@ nonisolated struct LicenseSnapshot: Equatable, Sendable {
     guard let entitlement, entitlement.status == .active,
       let updatesThrough = entitlement.updatesThrough, let releaseDay
     else { return false }
+    guard entitlement.teamLeaseValid else { return false }
     return releaseDay <= updatesThrough
+  }
+
+  var hasUsableActiveEntitlement: Bool {
+    entitlement?.status == .active && (entitlement?.teamLeaseValid ?? false)
   }
 
   var remainingCreations: Int {
@@ -45,6 +50,7 @@ nonisolated enum LicenseError: Error, Equatable, LocalizedError, Sendable {
   case licenseRequired
   case invalidKey
   case invalidEntitlement
+  case teamLeaseExpired
   case missingDeviceIdentity
   case storageUnavailable
   case creationInProgress
@@ -60,6 +66,8 @@ nonisolated enum LicenseError: Error, Equatable, LocalizedError, Sendable {
       "Enter a valid Supacode license key."
     case .invalidEntitlement:
       "The license server returned an invalid entitlement."
+    case .teamLeaseExpired:
+      "Your Team seat needs an online refresh. Connect to the internet and refresh your license."
     case .missingDeviceIdentity:
       "Supacode could not identify this Mac. Try again after restarting the app."
     case .storageUnavailable:
