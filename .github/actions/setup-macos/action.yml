@@ -43,6 +43,13 @@ runs:
       run: |
         XCODE_VERSION="$(xcodebuild -version | tr '\n' '-' | sed 's/[^A-Za-z0-9._-]/_/g; s/-$//')"
         printf '%s\n' "XCODE_VERSION=$XCODE_VERSION" >> "$GITHUB_ENV"
+    - name: Swift package download cache
+      uses: actions/cache@v5
+      with:
+        path: |
+          ~/.cache/swifterpm/artifacts
+          ~/.cache/swifterpm/sources
+        key: ${{ runner.os }}-${{ runner.arch }}-swifterpm-v1-${{ hashFiles('Tuist/Package.swift', 'Tuist/Package.resolved', 'mise.toml') }}
     - name: ThirdParty cache keys
       shell: bash
       run: |
