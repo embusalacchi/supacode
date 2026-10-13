@@ -43,13 +43,6 @@ runs:
       run: |
         XCODE_VERSION="$(xcodebuild -version | tr '\n' '-' | sed 's/[^A-Za-z0-9._-]/_/g; s/-$//')"
         printf '%s\n' "XCODE_VERSION=$XCODE_VERSION" >> "$GITHUB_ENV"
-    - name: Swift package download cache
-      uses: actions/cache@v5
-      with:
-        path: |
-          ~/.cache/swifterpm/artifacts
-          ~/.cache/swifterpm/sources
-        key: ${{ runner.os }}-${{ runner.arch }}-swifterpm-v1-${{ hashFiles('Tuist/Package.swift', 'Tuist/Package.resolved', 'mise.toml') }}
     - name: ThirdParty cache keys
       shell: bash
       run: |
@@ -62,8 +55,11 @@ runs:
       id: ghostty_cache
       uses: actions/cache@v5
       with:
-        path: .build/ghostty
-        key: ${{ runner.os }}-${{ runner.arch }}-xcode-${{ env.XCODE_VERSION }}-ghostty-v3-${{ env.GHOSTTY_SHA }}-${{ hashFiles('scripts/build-ghostty.sh', 'mise.toml', '.gitmodules', 'patches/ghostty/*.patch') }}
+        path: |
+          .build/ghostty/GhosttyKit.xcframework
+          .build/ghostty/share
+          .build/ghostty/fingerprint
+        key: ${{ runner.os }}-${{ runner.arch }}-xcode-${{ env.XCODE_VERSION }}-ghostty-v4-${{ env.GHOSTTY_SHA }}-${{ hashFiles('scripts/build-ghostty.sh', 'mise.toml', '.gitmodules', 'patches/ghostty/*.patch') }}
     - name: Build ghostty
       if: steps.ghostty_cache.outputs.cache-hit != 'true'
       shell: bash
@@ -74,8 +70,10 @@ runs:
       id: zmx_cache
       uses: actions/cache@v5
       with:
-        path: .build/zmx
-        key: ${{ runner.os }}-${{ runner.arch }}-xcode-${{ env.XCODE_VERSION }}-zmx-v1-${{ env.ZMX_SHA }}-${{ hashFiles('scripts/build-zmx.sh', 'mise.toml', '.gitmodules', 'patches/zmx/*.patch') }}
+        path: |
+          .build/zmx/bin/zmx
+          .build/zmx/fingerprint
+        key: ${{ runner.os }}-${{ runner.arch }}-xcode-${{ env.XCODE_VERSION }}-zmx-v2-${{ env.ZMX_SHA }}-${{ hashFiles('scripts/build-zmx.sh', 'mise.toml', '.gitmodules', 'patches/zmx/*.patch') }}
     - name: Build zmx
       if: steps.zmx_cache.outputs.cache-hit != 'true'
       shell: bash
