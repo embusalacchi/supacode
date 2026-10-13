@@ -6,6 +6,10 @@ make # this show available commands
 
 Requires [mise](https://mise.jdx.dev/) for zig, swiftlint, swift-format, xcbeautify, and xcsift tooling. Run `mise install` once to fetch the pinned versions.
 
+- Keep the shared macOS artifact caches limited to the finished GhosttyKit framework and resources, the zmx binary, and their fingerprints. Preserve the invalidation inputs and build-on-miss behavior; see [the CI ledger](docs/ci-pipeline.md).
+- New tests under `supacodeTests` join the appropriate bundle through `Project.swift`; keep all four bundles in the `supacode-tests` scheme used by `make test`.
+- Before adding a CI shard, measure compilation and Xcode's test-operation window. Each new macOS job repeats checkout, setup, and dependency inspection, which cost about three minutes in the warm baseline.
+
 ## Architecture
 
 Supacode is a macOS terminal emulator that for running multiple coding agents in parallel in Git worktrees, using GhosttyKit as the underlying terminal.
