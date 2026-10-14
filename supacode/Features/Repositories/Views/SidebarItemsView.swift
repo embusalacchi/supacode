@@ -818,23 +818,37 @@ private struct SidebarItemContextMenu: View {
       (!$0.isMainWorktree || $0.isFolder) && !$0.lifecycle.isPending
     }
     if !groupableRows.isEmpty {
+      let structure = store.sidebarStructure
+      let currentGroups = Set(groupableRows.map { structure.groupPathByID[$0.id] })
       Menu("Group", systemImage: "folder") {
-        ForEach(store.sidebarStructure.groupPaths, id: \.self) { path in
-          Button(path) {
-            setGroup(path, for: groupableRows)
+        Button("New Group…") {
+          store.send(
+            .requestNewGroup(
+              Dictionary(groupableRows.map { ($0.id, $0.repositoryID) }, uniquingKeysWith: { first, _ in first })
+            )
+          )
+        }
+        .help("Name a new folder and move these rows into it. Use / for subfolders.")
+        if !structure.groupPaths.isEmpty {
+          Divider()
+          // A checkmark marks the folder every selected row is already in.
+          ForEach(structure.groupPaths, id: \.self) { path in
+            Toggle(
+              path,
+              isOn: Binding(
+                get: { currentGroups == [path] },
+                set: { _ in setGroup(path, for: groupableRows) }
+              )
+            )
           }
         }
-        if !isBulkSelection {
-          Button("New Group…") {
-            store.send(.requestCustomizeWorktree(rowID, repositoryID))
+        if currentGroups.contains(where: { $0 != nil }) {
+          Divider()
+          Button("Remove from Group") {
+            setGroup(nil, for: groupableRows)
           }
-          .help("Type a group in Customize Appearance. Use / for subfolders.")
+          .help("Show these rows outside any group folder")
         }
-        Divider()
-        Button("Remove from Group") {
-          setGroup(nil, for: groupableRows)
-        }
-        .help("Show these rows outside any group folder")
       }
       Divider()
     }

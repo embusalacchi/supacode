@@ -476,6 +476,57 @@ struct WorktreeCustomizationParentTests {
     #expect(groups.isEmpty)
   }
 
+  /// Opens the New Group prompt. An exhaustive first send on a fresh store reports an empty
+  /// TestStore diff for this action (as in `setWorktreeGroupIgnoresGitMainWorktree`), so the rows
+  /// are checked directly and the following steps stay exhaustive.
+  private func openNewGroupPrompt(
+    _ store: TestStoreOf<RepositoriesFeature>,
+    rows: [Worktree.ID: Repository.ID]
+  ) async {
+    store.exhaustivity = .off
+    await store.send(.requestNewGroup(rows))
+    #expect(store.state.newGroupPromptRows == rows)
+    store.exhaustivity = .on
+  }
+
+  @Test func newGroupPromptMovesEligibleRowsIntoTheNormalizedGroup() async {
+    let store = TestStore(initialState: makeInitialState()) {
+      RepositoriesFeature()
+    }
+    await openNewGroupPrompt(store, rows: [worktreeID: repoID, WorktreeID("\(repoID)/main"): repoID])
+
+    // The git main worktree is skipped; the feature row moves.
+    await store.send(.newGroupPromptSubmitted(name: " Project 1 / Backend ")) {
+      $0.newGroupPromptRows = [:]
+      $0.$sidebar.withLock { sidebar in
+        sidebar.sections[self.repoID]?.buckets[.unpinned]?.items[self.worktreeID]?.group = "Project 1/Backend"
+      }
+      $0.applyPostReduceCacheRecomputes()
+    }
+  }
+
+  @Test func blankNewGroupNameClosesThePromptWithoutChanges() async {
+    let store = TestStore(initialState: makeInitialState()) {
+      RepositoriesFeature()
+    }
+    await openNewGroupPrompt(store, rows: [worktreeID: repoID])
+
+    await store.send(.newGroupPromptSubmitted(name: " / ")) {
+      $0.newGroupPromptRows = [:]
+    }
+  }
+
+  @Test func dismissingNewGroupPromptForgetsItsRows() async {
+    let store = TestStore(initialState: makeInitialState()) {
+      RepositoriesFeature()
+    }
+    await openNewGroupPrompt(store, rows: [worktreeID: repoID])
+
+    await store.send(.setNewGroupPromptPresented(false)) {
+      $0.newGroupPromptRows = [:]
+    }
+  }
+
   @Test func sidebarGroupExpansionChangedTogglesCollapsedGroups() async {
     let store = TestStore(initialState: makeInitialState()) {
       RepositoriesFeature()

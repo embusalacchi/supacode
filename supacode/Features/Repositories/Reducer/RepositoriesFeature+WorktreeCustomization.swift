@@ -72,19 +72,33 @@ extension RepositoriesFeature {
         return .none
 
       case .setWorktreeGroup(let worktreeID, let repositoryID, let group):
-        // Same row eligibility as the sheet: git main worktrees are repository-level.
-        guard let repository = state.repositories[id: repositoryID],
-          let worktree = repository.worktrees.first(where: { $0.id == worktreeID }),
-          !(repository.isGitRepository && state.isMainWorktree(worktree))
-        else {
-          repositoriesLogger.warning("setWorktreeGroup dropped: wt=\(worktreeID) repo=\(repositoryID)")
-          return .none
+        if writeGroup(group.flatMap(SidebarGroupNesting.normalized), worktreeID, repositoryID, &state) {
+          syncSidebar(&state)
         }
-        let normalized = group.flatMap(SidebarGroupNesting.normalized)
-        state.$sidebar.withLock { sidebar in
-          sidebar.setGroup(normalized, worktree: worktreeID, in: repositoryID)
+        return .none
+
+      case .requestNewGroup(let rows):
+        state.newGroupPromptRows = rows
+        return .none
+
+      case .newGroupPromptSubmitted(let name):
+        let rows = state.newGroupPromptRows
+        state.newGroupPromptRows = [:]
+        guard let group = SidebarGroupNesting.normalized(name) else { return .none }
+        var wroteAny = false
+        for (worktreeID, repositoryID) in rows {
+          // Write first so `||` never skips a row.
+          wroteAny = writeGroup(group, worktreeID, repositoryID, &state) || wroteAny
         }
-        syncSidebar(&state)
+        if wroteAny {
+          syncSidebar(&state)
+        }
+        return .none
+
+      case .setNewGroupPromptPresented(let isPresented):
+        if !isPresented {
+          state.newGroupPromptRows = [:]
+        }
         return .none
 
       case .sidebarGroupExpansionChanged(let path, let isExpanded):
@@ -101,5 +115,26 @@ extension RepositoriesFeature {
         return .none
       }
     }
+  }
+
+  /// Writes an already-normalized group path to the row. Same row eligibility as the sheet: git
+  /// main worktrees are repository-level. Returns whether anything was written.
+  private static func writeGroup(
+    _ group: String?,
+    _ worktreeID: Worktree.ID,
+    _ repositoryID: Repository.ID,
+    _ state: inout State
+  ) -> Bool {
+    guard let repository = state.repositories[id: repositoryID],
+      let worktree = repository.worktrees.first(where: { $0.id == worktreeID }),
+      !(repository.isGitRepository && state.isMainWorktree(worktree))
+    else {
+      repositoriesLogger.warning("Group change dropped: wt=\(worktreeID) repo=\(repositoryID)")
+      return false
+    }
+    state.$sidebar.withLock { sidebar in
+      sidebar.setGroup(group, worktree: worktreeID, in: repositoryID)
+    }
+    return true
   }
 }

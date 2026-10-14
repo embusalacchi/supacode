@@ -298,6 +298,9 @@ struct RepositoriesFeature {
     @Presents var worktreeCreationPrompt: WorktreeCreationPromptFeature.State?
     @Presents var repositoryCustomization: RepositoryCustomizationFeature.State?
     @Presents var worktreeCustomization: WorktreeCustomizationFeature.State?
+    /// Rows the New Group prompt will move, keyed to their repositories. Empty while it's closed.
+    var newGroupPromptRows: [Worktree.ID: Repository.ID] = [:]
+    var isNewGroupPromptPresented: Bool { !newGroupPromptRows.isEmpty }
     @Presents var renameBranchPrompt: RenameBranchFeature.State?
     @Presents var remoteConnectionForm: RemoteConnectionFormFeature.State?
     @Presents var cloneRepositoryForm: CloneRepositoryFormFeature.State?
@@ -616,6 +619,11 @@ struct RepositoriesFeature {
     case setWorktreeAppearance(Worktree.ID, Repository.ID, title: String?, color: RepositoryColor?)
     /// Context-menu group move: overwrites the row's group path. `nil` removes it from its group.
     case setWorktreeGroup(Worktree.ID, Repository.ID, group: String?)
+    /// Context-menu "New Group…": ask for a folder name for these rows.
+    case requestNewGroup([Worktree.ID: Repository.ID])
+    /// New Group prompt answered: moves the prompt's rows into `name`. A blank name changes nothing.
+    case newGroupPromptSubmitted(name: String)
+    case setNewGroupPromptPresented(Bool)
     case requestRenameBranch(Worktree.ID, Repository.ID)
     case contextMenuOpenWorktree(Worktree.ID, OpenWorktreeAction)
     case worktreeCreationPrompt(PresentationAction<WorktreeCreationPromptFeature.Action>)
@@ -4836,6 +4844,9 @@ struct RepositoriesFeature {
       case .requestCustomizeWorktree,
         .setWorktreeAppearance,
         .setWorktreeGroup,
+        .requestNewGroup,
+        .newGroupPromptSubmitted,
+        .setNewGroupPromptPresented,
         .sidebarGroupExpansionChanged,
         .worktreeCustomization:
         // Handled by `WorktreeCustomizationParentReducer` below; main switch is at type-checker

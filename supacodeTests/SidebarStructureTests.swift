@@ -2192,6 +2192,7 @@ struct SidebarStructureTests {
         .leaf(id: rows[2].id, depth: 0, displayName: nil),
       ])
     #expect(structure.groupPaths == ["Project 1"])
+    #expect(structure.groupPathByID == [rows[1].id: "Project 1"])
   }
 
   @Test func rowsInACollapsedGroupFolderGetNoHotkey() {

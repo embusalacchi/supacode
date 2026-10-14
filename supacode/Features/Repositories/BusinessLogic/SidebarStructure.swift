@@ -292,6 +292,9 @@ struct SidebarStructure: Equatable, Sendable {
   /// Every group folder path in use, ancestors included, sorted for the row
   /// context menu's Group submenu.
   var groupPaths: [String] = []
+  /// Group path of every live, unarchived grouped row, so the Group submenu can
+  /// mark the current folder without reading the roster from a view body.
+  var groupPathByID: [Worktree.ID: String] = [:]
 
   static let empty = SidebarStructure(
     sections: [],
@@ -573,9 +576,9 @@ extension RepositoriesFeature.Action {
     case .setWorktreeAppearance:
       return .allSidebar
     // Context-menu group move rewrites the bucketed Item's group path.
-    case .setWorktreeGroup:
+    case .setWorktreeGroup, .newGroupPromptSubmitted:
       return .allSidebar
-    case .worktreeCustomization:
+    case .worktreeCustomization, .requestNewGroup, .setNewGroupPromptPresented:
       return []
 
     // Branch rename updates the worktree.name shown in the sidebar row and notification group.
@@ -748,8 +751,12 @@ extension RepositoriesFeature.State {
     let hoists = computeHighlightHoists(groupPinned: groupPinned, groupActive: groupActive)
     let repoSections = buildRepositorySections(hoisted: hoists.hoistedSet, sectionSort: sectionSort)
 
-    let pinnedRows = highlightGroupRows(for: hoists.pinned)
-    let activeRows = highlightGroupRows(for: hoists.active)
+    // Hoisted rows are never archived, so the roster-wide map covers both sections.
+    let groupByID = sidebarGroupByID()
+    let pinnedRows = SidebarGroupNesting.buildRows(
+      orderedIDs: hoists.pinned, groupByID: groupByID, collapsedPaths: sidebar.collapsedGroups)
+    let activeRows = SidebarGroupNesting.buildRows(
+      orderedIDs: hoists.active, groupByID: groupByID, collapsedPaths: sidebar.collapsedGroups)
     var sections: [SidebarStructure.Section] = []
     if !hoists.pinned.isEmpty {
       sections.append(.highlight(kind: .pinned, rowIDs: hoists.pinned, rows: pinnedRows))
@@ -781,22 +788,9 @@ extension RepositoriesFeature.State {
       repositoryHighlightByID: highlightProjections.tags,
       hoistSummaryByRepositoryID: highlightProjections.summaries,
       reorderableRepositoryIDs: repoSections.reorderableRepositoryIDs,
-      groupPaths: sidebarGroupPaths()
-    )
-  }
-
-  /// Render plan for one highlight section: `ids` nested under their group folders.
-  private func highlightGroupRows(for ids: [Worktree.ID]) -> [SidebarBranchNesting.Row] {
-    var groupByID: [Worktree.ID: String] = [:]
-    for id in ids {
-      if let group = sidebarGroupPath(for: id) {
-        groupByID[id] = group
-      }
-    }
-    return SidebarGroupNesting.buildRows(
-      orderedIDs: ids,
-      groupByID: groupByID,
-      collapsedPaths: sidebar.collapsedGroups
+      groupPaths: Set(groupByID.values.flatMap(SidebarGroupNesting.paths(including:)))
+        .sorted { $0.localizedStandardCompare($1) == .orderedAscending },
+      groupPathByID: groupByID
     )
   }
 
@@ -815,17 +809,17 @@ extension RepositoriesFeature.State {
     return sidebar.sections[repositoryID]?.buckets[bucket]?.items[id]?.group
   }
 
-  /// Every group folder path assigned to a live, unarchived row, ancestors included. Walks the
-  /// roster rather than `sidebar.sections`, so leftovers from removed repositories don't appear.
-  private func sidebarGroupPaths() -> [String] {
+  /// Group path of every live, unarchived grouped row. Walks the roster rather than
+  /// `sidebar.sections`, so leftovers from removed repositories don't appear.
+  private func sidebarGroupByID() -> [Worktree.ID: String] {
     let archived = archivedWorktreeIDSet
-    var paths: Set<String> = []
+    var groupByID: [Worktree.ID: String] = [:]
     for id in sidebarItems.ids where !archived.contains(id) {
       if let group = sidebarGroupPath(for: id) {
-        paths.formUnion(SidebarGroupNesting.paths(including: group))
+        groupByID[id] = group
       }
     }
-    return paths.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    return groupByID
   }
 
   /// Pinned and Active hoists computed as if both sidebar grouping toggles were
