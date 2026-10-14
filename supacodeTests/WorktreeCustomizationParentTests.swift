@@ -185,6 +185,7 @@ struct WorktreeCustomizationParentTests {
               repositoryID: repoID,
               title: "Renamed",
               color: .red,
+              group: nil,
             )
           )))
     ) {
@@ -227,6 +228,7 @@ struct WorktreeCustomizationParentTests {
               repositoryID: repoID,
               title: "Renamed",
               color: .red,
+              group: nil,
             )
           )))
     ) {
@@ -385,6 +387,117 @@ struct WorktreeCustomizationParentTests {
       .worktreeCustomization(.presented(.delegate(.cancel)))
     ) {
       $0.worktreeCustomization = nil
+    }
+  }
+
+  // MARK: - Groups
+
+  @Test func requestCustomizeWorktreeSeedsGroupFromStoredItem() async {
+    var initial = makeInitialState()
+    initial.$sidebar.withLock { sidebar in
+      sidebar.setGroup("Project 1", worktree: self.worktreeID, in: self.repoID)
+    }
+    let store = TestStore(initialState: initial) {
+      RepositoriesFeature()
+    }
+
+    await store.send(.requestCustomizeWorktree(worktreeID, repoID)) {
+      $0.worktreeCustomization = WorktreeCustomizationFeature.State(
+        worktreeID: self.worktreeID,
+        repositoryID: self.repoID,
+        defaultName: "feature/x",
+        title: "",
+        color: nil,
+        group: "Project 1",
+      )
+    }
+  }
+
+  @Test func saveDelegatePersistsGroupToBucketedItem() async {
+    var initial = makeInitialState()
+    initial.worktreeCustomization = WorktreeCustomizationFeature.State(
+      worktreeID: worktreeID,
+      repositoryID: repoID,
+      defaultName: "feature/x",
+      title: "",
+      color: nil,
+    )
+    let store = TestStore(initialState: initial) {
+      RepositoriesFeature()
+    }
+
+    await store.send(
+      .worktreeCustomization(
+        .presented(
+          .delegate(
+            .save(worktreeID: worktreeID, repositoryID: repoID, title: nil, color: nil, group: "Project 1")
+          )))
+    ) {
+      $0.worktreeCustomization = nil
+      $0.$sidebar.withLock { sidebar in
+        sidebar.sections[self.repoID]?.buckets[.unpinned]?.items[self.worktreeID]?.group = "Project 1"
+      }
+      $0.applyPostReduceCacheRecomputes()
+    }
+  }
+
+  @Test func setWorktreeGroupNormalizesThenClears() async {
+    let store = TestStore(initialState: makeInitialState()) {
+      RepositoriesFeature()
+    }
+
+    await store.send(.setWorktreeGroup(worktreeID, repoID, group: " Project 1 / Backend ")) {
+      $0.$sidebar.withLock { sidebar in
+        sidebar.sections[self.repoID]?.buckets[.unpinned]?.items[self.worktreeID]?.group = "Project 1/Backend"
+      }
+      $0.applyPostReduceCacheRecomputes()
+    }
+    await store.send(.setWorktreeGroup(worktreeID, repoID, group: nil)) {
+      $0.$sidebar.withLock { sidebar in
+        sidebar.sections[self.repoID]?.buckets[.unpinned]?.items[self.worktreeID]?.group = nil
+      }
+      $0.applyPostReduceCacheRecomputes()
+    }
+  }
+
+  @Test func setWorktreeGroupIgnoresGitMainWorktree() async {
+    let store = TestStore(initialState: makeInitialState()) {
+      RepositoriesFeature()
+    }
+    // Only the dropped write matters here, not the cache refresh every sidebar action runs.
+    store.exhaustivity = .off
+
+    // The git main worktree is repository-level, like Customize Appearance.
+    await store.send(.setWorktreeGroup(WorktreeID("\(repoID)/main"), repoID, group: "Project 1"))
+
+    let groups = store.state.sidebar.sections.values.flatMap { section in
+      section.buckets.values.flatMap { $0.items.values.compactMap(\.group) }
+    }
+    #expect(groups.isEmpty)
+  }
+
+  @Test func sidebarGroupExpansionChangedTogglesCollapsedGroups() async {
+    let store = TestStore(initialState: makeInitialState()) {
+      RepositoriesFeature()
+    }
+
+    await store.send(.sidebarGroupExpansionChanged(path: "Project 1", isExpanded: false)) {
+      $0.$sidebar.withLock { $0.collapsedGroups = ["Project 1"] }
+    }
+    await store.send(.sidebarGroupExpansionChanged(path: "Project 1", isExpanded: true)) {
+      $0.$sidebar.withLock { $0.collapsedGroups = [] }
+    }
+  }
+
+  @Test func expandAllOpensCollapsedGroupFolders() async {
+    var initial = makeInitialState()
+    initial.$sidebar.withLock { $0.collapsedGroups = ["Project 1"] }
+    let store = TestStore(initialState: initial) {
+      RepositoriesFeature()
+    }
+
+    await store.send(.setAllSidebarGroupsExpanded(true)) {
+      $0.$sidebar.withLock { $0.collapsedGroups = [] }
     }
   }
 }

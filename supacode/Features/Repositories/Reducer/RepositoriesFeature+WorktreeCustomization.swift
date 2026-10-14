@@ -38,7 +38,8 @@ extension RepositoriesFeature {
           repositoryID: repositoryID,
           defaultName: defaultName,
           title: storedItem?.title ?? "",
-          color: storedItem?.color
+          color: storedItem?.color,
+          group: storedItem?.group ?? ""
         )
         return .none
 
@@ -47,12 +48,13 @@ extension RepositoriesFeature {
         return .none
 
       case .worktreeCustomization(
-        .presented(.delegate(.save(let worktreeID, let repositoryID, let title, let color)))
+        .presented(.delegate(.save(let worktreeID, let repositoryID, let title, let color, let group)))
       ):
         // Always overwrite (user save intent); falls back to `.unpinned` when the row hasn't been
         // seeded into a bucket yet (folder synthetic before first reconcile, deeplink/palette).
         state.$sidebar.withLock { sidebar in
           sidebar.setCustomization(title: title, color: color, worktree: worktreeID, in: repositoryID)
+          sidebar.setGroup(group, worktree: worktreeID, in: repositoryID)
         }
         syncSidebar(&state)
         state.worktreeCustomization = nil
@@ -67,6 +69,32 @@ extension RepositoriesFeature {
           sidebar.setCustomization(title: title, color: color, worktree: worktreeID, in: repositoryID)
         }
         syncSidebar(&state)
+        return .none
+
+      case .setWorktreeGroup(let worktreeID, let repositoryID, let group):
+        // Same row eligibility as the sheet: git main worktrees are repository-level.
+        guard let repository = state.repositories[id: repositoryID],
+          let worktree = repository.worktrees.first(where: { $0.id == worktreeID }),
+          !(repository.isGitRepository && state.isMainWorktree(worktree))
+        else {
+          repositoriesLogger.warning("setWorktreeGroup dropped: wt=\(worktreeID) repo=\(repositoryID)")
+          return .none
+        }
+        let normalized = group.flatMap(SidebarGroupNesting.normalized)
+        state.$sidebar.withLock { sidebar in
+          sidebar.setGroup(normalized, worktree: worktreeID, in: repositoryID)
+        }
+        syncSidebar(&state)
+        return .none
+
+      case .sidebarGroupExpansionChanged(let path, let isExpanded):
+        state.$sidebar.withLock { sidebar in
+          if isExpanded {
+            sidebar.collapsedGroups.remove(path)
+          } else {
+            sidebar.collapsedGroups.insert(path)
+          }
+        }
         return .none
 
       default:

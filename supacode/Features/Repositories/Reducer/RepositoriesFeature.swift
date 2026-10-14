@@ -409,6 +409,8 @@ struct RepositoriesFeature {
       prefix: String,
       isExpanded: Bool
     )
+    /// Expand or collapse a group folder in the Pinned and Active sections.
+    case sidebarGroupExpansionChanged(path: String, isExpanded: Bool)
     /// Expand or collapse every sidebar group at once. Expanding also clears
     /// every nested branch-group prefix so the tree opens fully.
     case setAllSidebarGroupsExpanded(Bool)
@@ -612,6 +614,8 @@ struct RepositoriesFeature {
     /// Deeplink / CLI appearance update: overwrites the row's sidebar title and tint.
     /// `nil` clears the field; omit-vs-clear was already resolved upstream in `AppFeature`.
     case setWorktreeAppearance(Worktree.ID, Repository.ID, title: String?, color: RepositoryColor?)
+    /// Context-menu group move: overwrites the row's group path. `nil` removes it from its group.
+    case setWorktreeGroup(Worktree.ID, Repository.ID, group: String?)
     case requestRenameBranch(Worktree.ID, Repository.ID)
     case contextMenuOpenWorktree(Worktree.ID, OpenWorktreeAction)
     case worktreeCreationPrompt(PresentationAction<WorktreeCreationPromptFeature.Action>)
@@ -4116,6 +4120,9 @@ struct RepositoriesFeature {
             }
             sidebar.sections[repositoryID] = section
           }
+          if isExpanded {
+            sidebar.collapsedGroups.removeAll()
+          }
         }
         return .none
 
@@ -4828,6 +4835,8 @@ struct RepositoriesFeature {
 
       case .requestCustomizeWorktree,
         .setWorktreeAppearance,
+        .setWorktreeGroup,
+        .sidebarGroupExpansionChanged,
         .worktreeCustomization:
         // Handled by `WorktreeCustomizationParentReducer` below; main switch is at type-checker
         // capacity, so the customization arms are split out into a dedicated reducer.

@@ -3,11 +3,11 @@ import SupacodeSettingsShared
 import SwiftUI
 
 /// Pinned / Active highlight section renderer. Receives an already-ordered
-/// row ID list from `SidebarStructure` and just lays it out; no per-leaf
-/// classification or sort runs here.
+/// render plan (rows nested under group folders) from `SidebarStructure` and
+/// just lays it out; no per-leaf classification or sort runs here.
 struct SidebarHighlightSection: View {
   let kind: SidebarStructure.HighlightKind
-  let rowIDs: [Worktree.ID]
+  let rows: [SidebarBranchNesting.Row]
   let store: StoreOf<RepositoriesFeature>
   let terminalManager: WorktreeTerminalManager
   let repositoryHighlightByID: [Repository.ID: SidebarHighlightRepoTag]
@@ -18,14 +18,29 @@ struct SidebarHighlightSection: View {
 
   var body: some View {
     Section {
-      ForEach(rowIDs, id: \.self) { rowID in
-        SidebarHighlightRow(
-          rowID: rowID,
-          store: store,
-          terminalManager: terminalManager,
-          repositoryHighlightByID: repositoryHighlightByID,
-          shortcutHint: shortcutHintByID[rowID]
-        )
+      ForEach(rows) { row in
+        switch row {
+        case .leaf(let rowID, let depth, _):
+          SidebarHighlightRow(
+            rowID: rowID,
+            store: store,
+            terminalManager: terminalManager,
+            repositoryHighlightByID: repositoryHighlightByID,
+            shortcutHint: shortcutHintByID[rowID],
+            nestDepth: depth
+          )
+        case .groupHeader(let path, let components, let depth, let isCollapsed, let leafDescendantIDs):
+          SidebarPathGroupHeaderRow(
+            prefix: path,
+            components: components,
+            depth: depth,
+            isCollapsed: isCollapsed,
+            leafDescendantIDs: leafDescendantIDs,
+            store: store
+          ) {
+            store.send(.sidebarGroupExpansionChanged(path: path, isExpanded: isCollapsed))
+          }
+        }
       }
     } header: {
       HStack(spacing: 4) {
@@ -71,6 +86,7 @@ private struct SidebarHighlightRow: View {
   let terminalManager: WorktreeTerminalManager
   let repositoryHighlightByID: [Repository.ID: SidebarHighlightRepoTag]
   let shortcutHint: String?
+  let nestDepth: Int
 
   var body: some View {
     let highlight =
@@ -84,6 +100,7 @@ private struct SidebarHighlightRow: View {
       hideSubtitle: false,
       moveMode: .alwaysDisabled,
       shortcutHint: shortcutHint,
+      nestDepth: nestDepth,
       highlightSubtitle: highlight
     )
   }

@@ -79,7 +79,7 @@ struct SidebarStructureTests {
     let structure = state.computeSidebarStructure(groupPinned: false, groupActive: false)
 
     let highlightKinds = structure.sections.compactMap { section -> SidebarStructure.HighlightKind? in
-      if case .highlight(let kind, _) = section { return kind }
+      if case .highlight(let kind, _, _) = section { return kind }
       return nil
     }
     #expect(highlightKinds.isEmpty)
@@ -110,7 +110,7 @@ struct SidebarStructureTests {
     let structure = state.computeSidebarStructure(groupPinned: true, groupActive: true)
 
     let pinnedIDs = structure.sections.compactMap { section -> [Worktree.ID]? in
-      if case .highlight(.pinned, let ids) = section { return ids }
+      if case .highlight(.pinned, let ids, _) = section { return ids }
       return nil
     }.flatMap { $0 }
     #expect(pinnedIDs.isEmpty)
@@ -143,7 +143,7 @@ struct SidebarStructureTests {
 
     let grouped = state.computeSidebarStructure(groupPinned: true, groupActive: false)
     let pinnedIDs = grouped.sections.compactMap { section -> [Worktree.ID]? in
-      if case .highlight(.pinned, let ids) = section { return ids }
+      if case .highlight(.pinned, let ids, _) = section { return ids }
       return nil
     }.flatMap { $0 }
     #expect(pinnedIDs == [pendingID])
@@ -432,7 +432,7 @@ struct SidebarStructureTests {
     let structure = state.computeSidebarStructure(groupPinned: true, groupActive: true)
 
     let activeIDs = structure.sections.compactMap { section -> [Worktree.ID]? in
-      if case .highlight(.active, let ids) = section { return ids }
+      if case .highlight(.active, let ids, _) = section { return ids }
       return nil
     }.flatMap { $0 }
     #expect(activeIDs == [busy.id])
@@ -449,7 +449,7 @@ struct SidebarStructureTests {
 
   private func activeIDs(in structure: SidebarStructure) -> [Worktree.ID] {
     structure.sections.compactMap { section -> [Worktree.ID]? in
-      if case .highlight(.active, let ids) = section { return ids }
+      if case .highlight(.active, let ids, _) = section { return ids }
       return nil
     }.flatMap { $0 }
   }
@@ -682,7 +682,7 @@ struct SidebarStructureTests {
       groupPinned: true, groupActive: false, sectionSort: .alphabetical)
     #expect(
       {
-        if case .highlight(.pinned, let ids) = structure.sections.first { return ids == [pinned.id] }
+        if case .highlight(.pinned, let ids, _) = structure.sections.first { return ids == [pinned.id] }
         return false
       }())
     #expect(repositorySectionIDs(in: structure) == [alpha.id, zebra.id])
@@ -1003,7 +1003,7 @@ struct SidebarStructureTests {
     let structure = state.computeSidebarStructure(groupPinned: true, groupActive: true)
 
     let activeIDs = structure.sections.compactMap { section -> [Worktree.ID]? in
-      if case .highlight(.active, let ids) = section { return ids }
+      if case .highlight(.active, let ids, _) = section { return ids }
       return nil
     }.flatMap { $0 }
     #expect(!activeIDs.contains(archiving.id))
@@ -1027,7 +1027,7 @@ struct SidebarStructureTests {
     let structure = state.computeSidebarStructure(groupPinned: true, groupActive: true)
 
     let activeIDs = structure.sections.compactMap { section -> [Worktree.ID]? in
-      if case .highlight(.active, let ids) = section { return ids }
+      if case .highlight(.active, let ids, _) = section { return ids }
       return nil
     }.flatMap { $0 }
     #expect(!activeIDs.contains(deleting.id))
@@ -1050,7 +1050,7 @@ struct SidebarStructureTests {
     let structure = state.computeSidebarStructure(groupPinned: true, groupActive: true)
 
     let activeIDs = structure.sections.compactMap { section -> [Worktree.ID]? in
-      if case .highlight(.active, let ids) = section { return ids }
+      if case .highlight(.active, let ids, _) = section { return ids }
       return nil
     }.flatMap { $0 }
     #expect(activeIDs.contains(pending.id))
@@ -1131,7 +1131,7 @@ struct SidebarStructureTests {
       return false
     }
     let pinnedIDs = structure.sections.compactMap { section -> [Worktree.ID]? in
-      if case .highlight(.pinned, let ids) = section { return ids }
+      if case .highlight(.pinned, let ids, _) = section { return ids }
       return nil
     }.flatMap { $0 }
     #expect(pinnedIDs == [folderID])
@@ -2134,5 +2134,74 @@ struct SidebarStructureTests {
     // Archive spares the main worktree; delete spares only the non-idle row.
     #expect(state.sidebarSelectionSlice.archiveTargets.map(\.worktreeID) == [idle.id])
     #expect(state.sidebarSelectionSlice.deleteTargets.map(\.worktreeID) == [main.id, idle.id])
+  }
+
+  // MARK: - Group folders.
+
+  private struct GroupedActiveFixture {
+    var state: RepositoriesFeature.State
+    let main: Worktree
+    let rows: [Worktree]
+  }
+
+  /// Three active rows (alphabetical: alpha, beta, gamma) with `beta` in a group.
+  private func makeGroupedActiveState() -> GroupedActiveFixture {
+    let repoRoot = URL(fileURLWithPath: "/tmp/repo")
+    let main = makeMainWorktree(repoRoot: repoRoot)
+    let rows = ["alpha", "beta", "gamma"].map { makeWorktree(id: "/tmp/repo/\($0)", name: $0, repoRoot: repoRoot) }
+    let repository = Repository(
+      id: RepositoryID(repoRoot.path(percentEncoded: false)),
+      rootURL: repoRoot,
+      name: "repo",
+      worktrees: IdentifiedArray(uniqueElements: [main] + rows)
+    )
+    var state = makeState(repositories: [repository])
+    for row in rows {
+      state.sidebarItems[id: row.id]?.runningScripts.append(.init(id: UUID(), tint: .blue))
+    }
+    state.$sidebar.withLock { sidebar in
+      sidebar.setGroup("Project 1", worktree: rows[1].id, in: repository.id)
+    }
+    return GroupedActiveFixture(state: state, main: main, rows: rows)
+  }
+
+  private func activeRows(in structure: SidebarStructure) -> [SidebarBranchNesting.Row] {
+    structure.sections.compactMap { section -> [SidebarBranchNesting.Row]? in
+      if case .highlight(.active, _, let rows) = section { return rows }
+      return nil
+    }.flatMap { $0 }
+  }
+
+  @Test func activeRowsNestUnderTheirGroupFolder() {
+    let fixture = makeGroupedActiveState()
+    let rows = fixture.rows
+
+    let structure = fixture.state.computeSidebarStructure(groupPinned: true, groupActive: true)
+
+    #expect(
+      activeRows(in: structure) == [
+        .leaf(id: rows[0].id, depth: 0, displayName: nil),
+        .groupHeader(
+          prefix: "Project 1",
+          components: ["Project 1"],
+          depth: 0,
+          isCollapsed: false,
+          leafDescendantIDs: [rows[1].id]
+        ),
+        .leaf(id: rows[1].id, depth: 1, displayName: nil),
+        .leaf(id: rows[2].id, depth: 0, displayName: nil),
+      ])
+    #expect(structure.groupPaths == ["Project 1"])
+  }
+
+  @Test func rowsInACollapsedGroupFolderGetNoHotkey() {
+    var fixture = makeGroupedActiveState()
+    fixture.state.$sidebar.withLock { $0.collapsedGroups = ["Project 1"] }
+    let rows = fixture.rows
+
+    let structure = fixture.state.computeSidebarStructure(groupPinned: true, groupActive: true)
+
+    #expect(structure.slotByID[rows[1].id] == nil)
+    #expect(structure.hotkeySlots.map(\.id) == [rows[0].id, rows[2].id, fixture.main.id])
   }
 }

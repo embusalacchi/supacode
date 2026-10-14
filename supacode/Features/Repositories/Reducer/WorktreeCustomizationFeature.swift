@@ -11,6 +11,8 @@ struct WorktreeCustomizationFeature {
     let defaultName: String
     var title: String
     var color: RepositoryColor?
+    /// Group path as typed; normalized on save (see `SidebarGroupNesting.normalized`).
+    var group: String = ""
   }
 
   enum Action: BindableAction, Equatable {
@@ -28,6 +30,7 @@ struct WorktreeCustomizationFeature {
       repositoryID: Repository.ID,
       title: String?,
       color: RepositoryColor?,
+      group: String?,
     )
   }
 
@@ -53,6 +56,7 @@ struct WorktreeCustomizationFeature {
               repositoryID: state.repositoryID,
               title: resolvedTitle,
               color: state.color,
+              group: SidebarGroupNesting.normalized(state.group),
             )
           )
         )
