@@ -1,4 +1,5 @@
 import AppKit
+import Clocks
 import Foundation
 import GhosttyKit
 import SupacodeSettingsShared
@@ -589,5 +590,35 @@ struct GhosttySurfaceViewTests {
     // Idempotent: the surface is already gone, so this must not double-free.
     surfaceView.closeSurface()
     #expect(surfaceView.surface == nil)
+  }
+
+  @Test func cachedValueServesTheFetchUntilItsDurationPasses() async {
+    let clock = TestClock()
+    var fetches = 0
+    let cache = GhosttySurfaceView.CachedValue(duration: .milliseconds(500), clock: clock) {
+      fetches += 1
+      return fetches
+    }
+
+    #expect(cache.get() == 1)
+    await clock.advance(by: .milliseconds(499))
+    #expect(cache.get() == 1)
+    await clock.advance(by: .milliseconds(1))
+    #expect(cache.get() == 2)
+    // The refetch starts a fresh window.
+    await clock.advance(by: .milliseconds(499))
+    #expect(cache.get() == 2)
+    #expect(fetches == 2)
+  }
+
+  @Test func localEventRouteClaimsOnlyWhatTheSurfacesHandle() {
+    typealias Route = GhosttySurfaceView.LocalEventRoute
+    #expect(Route.route(for: .keyUp, modifierFlags: []) == .passThrough)
+    #expect(Route.route(for: .keyUp, modifierFlags: .shift) == .passThrough)
+    #expect(Route.route(for: .keyUp, modifierFlags: [.command, .shift]) == .keyUpToFocusedSurface)
+    #expect(Route.route(for: .leftMouseDown, modifierFlags: []) == .leftMouseDownToHitSurface)
+    #expect(Route.route(for: .flagsChanged, modifierFlags: .command) == .flagsChangedToOtherSurfaces)
+    #expect(Route.route(for: .keyDown, modifierFlags: .command) == .passThrough)
+    #expect(Route.route(for: .rightMouseDown, modifierFlags: []) == .passThrough)
   }
 }

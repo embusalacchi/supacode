@@ -39,36 +39,29 @@ final class GhosttySurfaceView: NSView, Identifiable {
     }
   }
 
-  private final class CachedValue<T> {
-    private var value: T?
+  // Expiry is checked on access, so a miss never allocates a Task to clear the value.
+  final class CachedValue<T, C: Clock<Duration>> {
+    private var cached: (value: T, expiresAt: C.Instant)?
     private let fetch: () -> T
     private let duration: Duration
-    private var expiryTask: Task<Void, Never>?
+    private let clock: C
 
-    init(duration: Duration, fetch: @escaping () -> T) {
+    init(duration: Duration, clock: C, fetch: @escaping () -> T) {
       self.duration = duration
+      self.clock = clock
       self.fetch = fetch
     }
 
-    nonisolated deinit {
-      expiryTask?.cancel()
-    }
+    nonisolated deinit {}
 
     func get() -> T {
-      if let value {
-        return value
+      let now = clock.now
+      if let cached, now < cached.expiresAt {
+        return cached.value
       }
 
       let fetched = fetch()
-      value = fetched
-      expiryTask?.cancel()
-      expiryTask = Task { [weak self] in
-        guard let self else { return }
-        try? await ContinuousClock().sleep(for: self.duration)
-        guard !Task.isCancelled else { return }
-        self.value = nil
-        self.expiryTask = nil
-      }
+      cached = (fetched, now.advanced(by: duration))
       return fetched
     }
   }
@@ -108,8 +101,8 @@ final class GhosttySurfaceView: NSView, Identifiable {
   @Shared(.settingsFile) private var settingsFile
   // True between a left press this view forwarded to the terminal and its release. mouseUp only
   // reports a release when it is set, so a consumed focus-transfer press (which never sets it,
-  // whether released here or dragged in from another split) can't orphan a release. Cleared at
-  // the top of localEventLeftMouseDown so an interrupted gesture can't leave it stale.
+  // whether released here or dragged in from another split) can't orphan a release. Cleared on
+  // every left press by handleLocalEvent so an interrupted gesture can't leave it stale.
   private var leftMousePressed = false
   private var markedText = NSMutableAttributedString()
   private var keyboardLayoutChangeKeyUpSuppression: KeyboardLayoutChangeKeyUpSuppression?
@@ -120,11 +113,11 @@ final class GhosttySurfaceView: NSView, Identifiable {
   private var lastScrollbar: ScrollbarState?
   private(set) var lastOcclusion: Bool?
   private var lastSurfaceFocus: Bool?
-  private var eventMonitor: Any?
   private var notificationObservers: [NSObjectProtocol] = []
   private var prevPressureStage: Int = 0
-  private lazy var cachedScreenContents = CachedValue<String>(duration: .milliseconds(500)) {
-    [weak self] in
+  private lazy var cachedScreenContents = CachedValue<String, ContinuousClock>(
+    duration: .milliseconds(500), clock: ContinuousClock()
+  ) { [weak self] in
     self?.readScreenContents() ?? ""
   }
   var passwordInput: Bool = false {
@@ -289,11 +282,7 @@ final class GhosttySurfaceView: NSView, Identifiable {
       surfaceRef = runtime.registerSurface(surface)
     }
     registerForDraggedTypes(Array(Self.dropTypes))
-
-    eventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyUp, .leftMouseDown, .flagsChanged]) {
-      [weak self] event in
-      self?.localEventHandler(event)
-    }
+    Self.registerForLocalEvents(self)
   }
 
   required init?(coder: NSCoder) {
@@ -302,9 +291,6 @@ final class GhosttySurfaceView: NSView, Identifiable {
 
   nonisolated deinit {
     MainActor.assumeIsolated {
-      if let eventMonitor {
-        NSEvent.removeMonitor(eventMonitor)
-      }
       clearNotificationObservers()
       SecureInput.shared.removeScoped(ObjectIdentifier(self))
       // A live surface here means a teardown path bypassed `closeSurface`; the
@@ -954,34 +940,67 @@ final class GhosttySurfaceView: NSView, Identifiable {
     showDefinition(for: str, at: point)
   }
 
-  private func localEventHandler(_ event: NSEvent) -> NSEvent? {
-    switch event.type {
-    case .keyUp:
-      localEventKeyUp(event)
-    case .leftMouseDown:
-      localEventLeftMouseDown(event)
-    case .flagsChanged:
-      localEventFlagsChanged(event)
-    default:
-      event
+  // One app-wide monitor routes each event to the surfaces it concerns, instead of every
+  // surface running its own monitor on every event. The weak table drops dead surfaces itself.
+  private static let liveSurfaces = NSHashTable<GhosttySurfaceView>.weakObjects()
+  private static var localEventMonitor: Any?
+
+  private static func registerForLocalEvents(_ surface: GhosttySurfaceView) {
+    liveSurfaces.add(surface)
+    guard localEventMonitor == nil else { return }
+    localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyUp, .leftMouseDown, .flagsChanged]) {
+      event in
+      handleLocalEvent(event)
     }
   }
 
-  private func localEventKeyUp(_ event: NSEvent) -> NSEvent? {
-    if !event.modifierFlags.contains(.command) { return event }
-    guard focused else { return event }
-    keyUp(with: event)
-    return nil
+  enum LocalEventRoute: Equatable {
+    case passThrough
+    // AppKit doesn't deliver a Cmd key-up to the responder, so the focused surface takes it.
+    case keyUpToFocusedSurface
+    case leftMouseDownToHitSurface
+    // The responder chain delivers flagsChanged only to the first responder, so forward it to
+    // every other surface; a hovered but unfocused terminal still needs to refresh its links.
+    case flagsChangedToOtherSurfaces
+
+    static func route(for type: NSEvent.EventType, modifierFlags: NSEvent.ModifierFlags) -> Self {
+      switch type {
+      case .keyUp: modifierFlags.contains(.command) ? .keyUpToFocusedSurface : .passThrough
+      case .leftMouseDown: .leftMouseDownToHitSurface
+      case .flagsChanged: .flagsChangedToOtherSurfaces
+      default: .passThrough
+      }
+    }
+  }
+
+  private static func handleLocalEvent(_ event: NSEvent) -> NSEvent? {
+    switch LocalEventRoute.route(for: event.type, modifierFlags: event.modifierFlags) {
+    case .passThrough:
+      return event
+    case .keyUpToFocusedSurface:
+      guard let surface = liveSurfaces.allObjects.first(where: { $0.focused }) else { return event }
+      surface.keyUp(with: event)
+      return nil
+    case .leftMouseDownToHitSurface:
+      // Clear stale press state up front so an interrupted gesture can't orphan a later release.
+      for surface in liveSurfaces.allObjects {
+        surface.leftMousePressed = false
+      }
+      // Hit-test in content-view space: the surface's frame origin tracks the scroll
+      // offset, so a self-space hit test double-applies it and misfires in scrollback.
+      guard let surface = event.window?.contentView?.hitTest(event.locationInWindow) as? GhosttySurfaceView
+      else { return event }
+      return surface.localEventLeftMouseDown(event)
+    case .flagsChangedToOtherSurfaces:
+      for surface in liveSurfaces.allObjects {
+        surface.localEventFlagsChanged(event)
+      }
+      return event
+    }
   }
 
   private func localEventLeftMouseDown(_ event: NSEvent) -> NSEvent? {
-    // Clear stale press state up front so an interrupted gesture can't orphan a later release.
-    leftMousePressed = false
-    guard let window, event.window != nil, window == event.window else { return event }
-    // Hit-test in content-view space: the surface's frame origin tracks the scroll
-    // offset, so a self-space hit test double-applies it and misfires in scrollback.
-    guard window.contentView?.hitTest(event.locationInWindow) == self else { return event }
-    guard window.firstResponder !== self else { return event }
+    guard let window, window.firstResponder !== self else { return event }
     // App and window already active: this click only transfers split focus, so consume it
     // instead of forwarding a press the terminal would later pair with an orphaned release.
     if NSApp.isActive, window.isKeyWindow {
@@ -993,12 +1012,9 @@ final class GhosttySurfaceView: NSView, Identifiable {
     return event
   }
 
-  // The responder chain delivers flagsChanged only to the first responder, so forward it to
-  // every other surface; a hovered but unfocused terminal still needs to refresh its links.
-  private func localEventFlagsChanged(_ event: NSEvent) -> NSEvent? {
-    guard window != nil, window?.firstResponder !== self else { return event }
+  private func localEventFlagsChanged(_ event: NSEvent) {
+    guard window != nil, window?.firstResponder !== self else { return }
     flagsChanged(with: event)
-    return event
   }
 
   func updateSurfaceSize(contentSize: CGSize? = nil) {
