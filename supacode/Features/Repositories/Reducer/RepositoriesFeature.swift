@@ -192,6 +192,9 @@ struct RepositoriesFeature {
     /// Global fallback applied when a repository has no `mergedWorktreeAction` override.
     var mergedWorktreeAction: MergedWorktreeAction = .ignore
     var moveNotifiedWorktreeToTop = false
+    /// Mirrors `GlobalSettings.sidebarFoldersEnabled`: nest Pinned and Active rows
+    /// under their group folders and offer the Group menu and field.
+    var sidebarFoldersEnabled = false
     /// Installed editors in menu order, mirrored down from `AppFeature` so the
     /// sidebar context menu never probes LaunchServices while building.
     var installedOpenActions: [OpenWorktreeAction] = []
@@ -624,6 +627,7 @@ struct RepositoriesFeature {
     /// New Group prompt answered: moves the prompt's rows into `name`. A blank name changes nothing.
     case newGroupPromptSubmitted(name: String)
     case setNewGroupPromptPresented(Bool)
+    case setSidebarFoldersEnabled(Bool)
     case requestRenameBranch(Worktree.ID, Repository.ID)
     case contextMenuOpenWorktree(Worktree.ID, OpenWorktreeAction)
     case worktreeCreationPrompt(PresentationAction<WorktreeCreationPromptFeature.Action>)
@@ -4847,6 +4851,7 @@ struct RepositoriesFeature {
         .requestNewGroup,
         .newGroupPromptSubmitted,
         .setNewGroupPromptPresented,
+        .setSidebarFoldersEnabled,
         .sidebarGroupExpansionChanged,
         .worktreeCustomization:
         // Handled by `WorktreeCustomizationParentReducer` below; main switch is at type-checker

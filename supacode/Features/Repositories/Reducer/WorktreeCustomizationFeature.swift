@@ -13,6 +13,9 @@ struct WorktreeCustomizationFeature {
     var color: RepositoryColor?
     /// Group path as typed; normalized on save (see `SidebarGroupNesting.normalized`).
     var group: String = ""
+    /// Whether the Group field is offered (Settings > Custom sidebar folders). A hidden
+    /// field still saves the stored group back unchanged.
+    var showsGroup = false
   }
 
   enum Action: BindableAction, Equatable {

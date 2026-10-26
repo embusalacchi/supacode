@@ -463,7 +463,7 @@ extension RepositoriesFeature.Action {
       .repositoryExpansionChanged, .branchNestExpansionChanged,
       .sidebarGroupExpansionChanged,
       .setAllSidebarGroupsExpanded,
-      .setMoveNotifiedWorktreeToTop,
+      .setMoveNotifiedWorktreeToTop, .setSidebarFoldersEnabled,
       .worktreeLineChangesLoaded,
       .consumeTerminalFocus:
       return .sidebarStructure
@@ -752,7 +752,8 @@ extension RepositoriesFeature.State {
     let repoSections = buildRepositorySections(hoisted: hoists.hoistedSet, sectionSort: sectionSort)
 
     // Hoisted rows are never archived, so the roster-wide map covers both sections.
-    let groupByID = sidebarGroupByID()
+    // With folders off, an empty map renders both sections flat.
+    let groupByID = sidebarFoldersEnabled ? sidebarGroupByID() : [:]
     let pinnedRows = SidebarGroupNesting.buildRows(
       orderedIDs: hoists.pinned, groupByID: groupByID, collapsedPaths: sidebar.collapsedGroups)
     let activeRows = SidebarGroupNesting.buildRows(

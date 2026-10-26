@@ -2156,6 +2156,7 @@ struct SidebarStructureTests {
       worktrees: IdentifiedArray(uniqueElements: [main] + rows)
     )
     var state = makeState(repositories: [repository])
+    state.sidebarFoldersEnabled = true
     for row in rows {
       state.sidebarItems[id: row.id]?.runningScripts.append(.init(id: UUID(), tint: .blue))
     }
@@ -2193,6 +2194,25 @@ struct SidebarStructureTests {
       ])
     #expect(structure.groupPaths == ["Project 1"])
     #expect(structure.groupPathByID == [rows[1].id: "Project 1"])
+  }
+
+  @Test func foldersOffRendersGroupedRowsFlat() {
+    var fixture = makeGroupedActiveState()
+    fixture.state.sidebarFoldersEnabled = false
+    let rows = fixture.rows
+
+    let structure = fixture.state.computeSidebarStructure(groupPinned: true, groupActive: true)
+
+    // The stored group survives; it just doesn't render, and the menu has nothing to list.
+    #expect(activeRows(in: structure) == rows.map { .leaf(id: $0.id, depth: 0, displayName: nil) })
+    #expect(structure.groupPaths.isEmpty)
+    #expect(structure.groupPathByID.isEmpty)
+    #expect(fixture.state.sidebarGroupPath(for: rows[1].id) == "Project 1")
+  }
+
+  @Test func setSidebarFoldersEnabledArmsSidebarStructureRecompute() {
+    let action = RepositoriesFeature.Action.setSidebarFoldersEnabled(true)
+    #expect(action.cacheInvalidations.contains(.sidebarStructure))
   }
 
   @Test func rowsInACollapsedGroupFolderGetNoHotkey() {

@@ -39,7 +39,8 @@ extension RepositoriesFeature {
           defaultName: defaultName,
           title: storedItem?.title ?? "",
           color: storedItem?.color,
-          group: storedItem?.group ?? ""
+          group: storedItem?.group ?? "",
+          showsGroup: state.sidebarFoldersEnabled
         )
         return .none
 
@@ -99,6 +100,10 @@ extension RepositoriesFeature {
         if !isPresented {
           state.newGroupPromptRows = [:]
         }
+        return .none
+
+      case .setSidebarFoldersEnabled(let isEnabled):
+        state.sidebarFoldersEnabled = isEnabled
         return .none
 
       case .sidebarGroupExpansionChanged(let path, let isExpanded):

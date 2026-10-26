@@ -817,7 +817,7 @@ private struct SidebarItemContextMenu: View {
     let groupableRows = contextRows.filter {
       (!$0.isMainWorktree || $0.isFolder) && !$0.lifecycle.isPending
     }
-    if !groupableRows.isEmpty {
+    if store.sidebarFoldersEnabled, !groupableRows.isEmpty {
       let structure = store.sidebarStructure
       let currentGroups = Set(groupableRows.map { structure.groupPathByID[$0.id] })
       Menu("Group", systemImage: "folder") {

@@ -53,6 +53,9 @@ struct WorktreeCustomizationParentTests {
     // from a populated baseline (matches what every action would see in a
     // real run) rather than a build-from-nil that registers as state churn.
     state.applyPostReduceCacheRecomputes()
+    // Write `$sidebar` last. Without it, a store's first exhaustive send reports a
+    // mismatch with an empty `(…)` diff unless that step itself writes `$sidebar`.
+    state.$sidebar.withLock { _ in }
     return state
   }
 
@@ -394,6 +397,7 @@ struct WorktreeCustomizationParentTests {
 
   @Test func requestCustomizeWorktreeSeedsGroupFromStoredItem() async {
     var initial = makeInitialState()
+    initial.sidebarFoldersEnabled = true
     initial.$sidebar.withLock { sidebar in
       sidebar.setGroup("Project 1", worktree: self.worktreeID, in: self.repoID)
     }
@@ -409,7 +413,18 @@ struct WorktreeCustomizationParentTests {
         title: "",
         color: nil,
         group: "Project 1",
+        showsGroup: true,
       )
+    }
+  }
+
+  @Test func setSidebarFoldersEnabledUpdatesState() async {
+    let store = TestStore(initialState: makeInitialState()) {
+      RepositoriesFeature()
+    }
+
+    await store.send(.setSidebarFoldersEnabled(true)) {
+      $0.sidebarFoldersEnabled = true
     }
   }
 
@@ -464,8 +479,6 @@ struct WorktreeCustomizationParentTests {
     let store = TestStore(initialState: makeInitialState()) {
       RepositoriesFeature()
     }
-    // Only the dropped write matters here, not the cache refresh every sidebar action runs.
-    store.exhaustivity = .off
 
     // The git main worktree is repository-level, like Customize Appearance.
     await store.send(.setWorktreeGroup(WorktreeID("\(repoID)/main"), repoID, group: "Project 1"))
@@ -476,17 +489,13 @@ struct WorktreeCustomizationParentTests {
     #expect(groups.isEmpty)
   }
 
-  /// Opens the New Group prompt. An exhaustive first send on a fresh store reports an empty
-  /// TestStore diff for this action (as in `setWorktreeGroupIgnoresGitMainWorktree`), so the rows
-  /// are checked directly and the following steps stay exhaustive.
   private func openNewGroupPrompt(
     _ store: TestStoreOf<RepositoriesFeature>,
     rows: [Worktree.ID: Repository.ID]
   ) async {
-    store.exhaustivity = .off
-    await store.send(.requestNewGroup(rows))
-    #expect(store.state.newGroupPromptRows == rows)
-    store.exhaustivity = .on
+    await store.send(.requestNewGroup(rows)) {
+      $0.newGroupPromptRows = rows
+    }
   }
 
   @Test func newGroupPromptMovesEligibleRowsIntoTheNormalizedGroup() async {

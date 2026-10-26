@@ -107,6 +107,10 @@ public struct AppearanceSettingsView: View {
           Text("Focus panes on hover")
           Text("Move focus to a split pane as the pointer moves over it, within the active window.")
         }
+        Toggle(isOn: $store.sidebarFoldersEnabled) {
+          Text("Custom sidebar folders")
+          Text("Group rows in the Pinned and Active sections into folders you name.")
+        }
       }
       Section("Accessibility") {
         Picker(selection: $store.chromeTextSize) {
