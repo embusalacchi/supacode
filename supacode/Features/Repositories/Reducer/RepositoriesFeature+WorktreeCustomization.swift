@@ -106,6 +106,19 @@ extension RepositoriesFeature {
         state.sidebarFoldersEnabled = isEnabled
         return .none
 
+      case .highlightGroupExpansionChanged(let kind, let repositoryID, let prefix, let isExpanded):
+        // Like `branchNestExpansionChanged`, never materialize a section for an unknown repository.
+        guard state.sidebar.sections[repositoryID] != nil else { return .none }
+        let group = SidebarState.HighlightGroup(kind: kind, branchPrefix: prefix)
+        state.$sidebar.withLock { sidebar in
+          if isExpanded {
+            sidebar.sections[repositoryID]?.collapsedHighlightGroups.remove(group)
+          } else {
+            sidebar.sections[repositoryID]?.collapsedHighlightGroups.insert(group)
+          }
+        }
+        return .none
+
       case .sidebarGroupExpansionChanged(let path, let isExpanded):
         state.$sidebar.withLock { sidebar in
           if isExpanded {

@@ -718,6 +718,9 @@ struct SidebarStateTests {
     var state = SidebarState()
     state.insert(worktree: "wt-1", in: repoA, bucket: .unpinned, item: .init(group: "Project 1/Backend"))
     state.collapsedGroups = ["Project 1"]
+    state.sections[repoA]?.collapsedHighlightGroups = [
+      .init(kind: .active, branchPrefix: nil), .init(kind: .pinned, branchPrefix: "feature"),
+    ]
 
     let decoded = try JSONDecoder().decode(SidebarState.self, from: JSONEncoder().encode(state))
 
@@ -732,6 +735,7 @@ struct SidebarStateTests {
 
     #expect(!json.contains("\"group\""))
     #expect(!json.contains("collapsedGroups"))
+    #expect(!json.contains("collapsedHighlightGroups"))
   }
 
   @Test func jsonWrittenBeforeGroupsDecodesWithNoGroups() throws {

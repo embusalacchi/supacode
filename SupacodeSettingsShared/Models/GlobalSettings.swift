@@ -185,7 +185,8 @@ public nonisolated struct GlobalSettings: Codable, Equatable, Sendable {
   /// Whether hovering a split pane focuses it (focus follows mouse). Off by default.
   public var hoverFocusMode: HoverFocusMode
   /// Whether rows in the Pinned and Active sidebar sections nest under their
-  /// user-assigned group folders. Off by default; groups are kept while off.
+  /// user-assigned group folders instead of by repository and branch. Off by
+  /// default; groups are kept while off.
   public var sidebarFoldersEnabled: Bool
   /// System-wide chord that toggles the app; nil (the default) leaves it unbound.
   public var globalToggleVisibilityHotkey: AppShortcutOverride?

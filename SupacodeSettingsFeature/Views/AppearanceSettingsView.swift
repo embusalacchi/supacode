@@ -109,7 +109,7 @@ public struct AppearanceSettingsView: View {
         }
         Toggle(isOn: $store.sidebarFoldersEnabled) {
           Text("Custom sidebar folders")
-          Text("Group rows in the Pinned and Active sections into folders you name.")
+          Text("Group Pinned and Active rows into folders you name, instead of by repository and branch.")
         }
       }
       Section("Accessibility") {

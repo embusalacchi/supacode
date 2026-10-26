@@ -560,4 +560,64 @@ struct WorktreeCustomizationParentTests {
       $0.$sidebar.withLock { $0.collapsedGroups = [] }
     }
   }
+
+  // MARK: - Pinned / Active repository groups
+
+  @Test func highlightGroupExpansionChangedTogglesTheRepositoryHeader() async {
+    let store = TestStore(initialState: makeInitialState()) {
+      RepositoriesFeature()
+    }
+    let header = SidebarState.HighlightGroup(kind: .active, branchPrefix: nil)
+
+    await store.send(
+      .highlightGroupExpansionChanged(kind: .active, repositoryID: repoID, prefix: nil, isExpanded: false)
+    ) {
+      $0.$sidebar.withLock { $0.sections[self.repoID]?.collapsedHighlightGroups = [header] }
+    }
+    await store.send(
+      .highlightGroupExpansionChanged(kind: .active, repositoryID: repoID, prefix: nil, isExpanded: true)
+    ) {
+      $0.$sidebar.withLock { $0.sections[self.repoID]?.collapsedHighlightGroups = [] }
+    }
+  }
+
+  @Test func expandAllOpensCollapsedRepositoryGroups() async {
+    var initial = makeInitialState()
+    initial.$sidebar.withLock {
+      $0.sections[self.repoID]?.collapsedHighlightGroups = [.init(kind: .pinned, branchPrefix: "feature")]
+    }
+    let store = TestStore(initialState: initial) {
+      RepositoriesFeature()
+    }
+
+    await store.send(.setAllSidebarGroupsExpanded(true)) {
+      $0.$sidebar.withLock { $0.sections[self.repoID]?.collapsedHighlightGroups = [] }
+    }
+  }
+
+  @Test func revealOpensTheHoistedRowsGroupsInItsSectionOnly() async {
+    var initial = makeInitialState()
+    initial.sidebarItems[id: worktreeID]?.runningScripts.append(.init(id: UUID(), tint: .blue))
+    initial.$sidebar.withLock { sidebar in
+      sidebar.sections[self.repoID]?.collapsedHighlightGroups = [
+        .init(kind: .active, branchPrefix: nil),
+        .init(kind: .active, branchPrefix: "feature"),
+        .init(kind: .pinned, branchPrefix: nil),
+      ]
+    }
+    initial.applyPostReduceCacheRecomputes()
+    let store = TestStore(initialState: initial) {
+      RepositoriesFeature()
+    }
+
+    // `feature/x` is in Active, so only Active's repository header and `feature` prefix open.
+    await store.send(.revealHoistedWorktreeInSidebar(worktreeID)) {
+      $0.$sidebar.withLock {
+        $0.sections[self.repoID]?.collapsedHighlightGroups = [.init(kind: .pinned, branchPrefix: nil)]
+      }
+      $0.nextPendingSidebarRevealID = 1
+      $0.pendingSidebarReveal = .init(id: 1, worktreeID: self.worktreeID)
+      $0.applyPostReduceCacheRecomputes()
+    }
+  }
 }

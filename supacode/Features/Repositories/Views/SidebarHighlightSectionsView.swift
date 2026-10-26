@@ -3,11 +3,11 @@ import SupacodeSettingsShared
 import SwiftUI
 
 /// Pinned / Active highlight section renderer. Receives an already-ordered
-/// render plan (rows nested under group folders) from `SidebarStructure` and
-/// just lays it out; no per-leaf classification or sort runs here.
+/// render plan (rows grouped by repository and branch, or by custom folder) from
+/// `SidebarStructure` and just lays it out; no per-leaf classification or sort runs here.
 struct SidebarHighlightSection: View {
   let kind: SidebarStructure.HighlightKind
-  let rows: [SidebarBranchNesting.Row]
+  let rows: [SidebarStructure.HighlightRow]
   let store: StoreOf<RepositoriesFeature>
   let terminalManager: WorktreeTerminalManager
   let repositoryHighlightByID: [Repository.ID: SidebarHighlightRepoTag]
@@ -20,25 +20,50 @@ struct SidebarHighlightSection: View {
     Section {
       ForEach(rows) { row in
         switch row {
-        case .leaf(let rowID, let depth, _):
+        case .repository(let repositoryID, let name, let isCollapsed, let leafDescendantIDs):
+          SidebarPathGroupHeaderRow(
+            prefix: name,
+            components: [],
+            depth: 0,
+            isCollapsed: isCollapsed,
+            leafDescendantIDs: leafDescendantIDs,
+            store: store
+          ) {
+            store.send(
+              .highlightGroupExpansionChanged(
+                kind: kind, repositoryID: repositoryID, prefix: nil, isExpanded: isCollapsed))
+          }
+        case .nested(.leaf(let rowID, let depth, let displayName), let repositoryID):
           SidebarHighlightRow(
             rowID: rowID,
             store: store,
             terminalManager: terminalManager,
             repositoryHighlightByID: repositoryHighlightByID,
             shortcutHint: shortcutHintByID[rowID],
-            nestDepth: depth
+            nestDepth: depth,
+            displayNameOverride: displayName,
+            // Under a repository header, the header already names the repository.
+            showsRepository: repositoryID == nil
           )
-        case .groupHeader(let path, let components, let depth, let isCollapsed, let leafDescendantIDs):
+        case .nested(
+          .groupHeader(let prefix, let components, let depth, let isCollapsed, let leafDescendantIDs),
+          let repositoryID
+        ):
           SidebarPathGroupHeaderRow(
-            prefix: path,
+            prefix: prefix,
             components: components,
             depth: depth,
             isCollapsed: isCollapsed,
             leafDescendantIDs: leafDescendantIDs,
             store: store
           ) {
-            store.send(.sidebarGroupExpansionChanged(path: path, isExpanded: isCollapsed))
+            if let repositoryID {
+              store.send(
+                .highlightGroupExpansionChanged(
+                  kind: kind, repositoryID: repositoryID, prefix: prefix, isExpanded: isCollapsed))
+            } else {
+              store.send(.sidebarGroupExpansionChanged(path: prefix, isExpanded: isCollapsed))
+            }
           }
         }
       }
@@ -87,11 +112,15 @@ private struct SidebarHighlightRow: View {
   let repositoryHighlightByID: [Repository.ID: SidebarHighlightRepoTag]
   let shortcutHint: String?
   let nestDepth: Int
+  let displayNameOverride: String?
+  let showsRepository: Bool
 
   var body: some View {
     let highlight =
-      store.scope(state: \.sidebarItems[id: rowID], action: \.sidebarItems[id: rowID])
-      .flatMap { repositoryHighlightByID[$0.state.repositoryID] }
+      showsRepository
+      ? store.scope(state: \.sidebarItems[id: rowID], action: \.sidebarItems[id: rowID])
+        .flatMap { repositoryHighlightByID[$0.state.repositoryID] }
+      : nil
     SidebarItemRow(
       rowID: rowID,
       store: store,
@@ -100,6 +129,7 @@ private struct SidebarHighlightRow: View {
       hideSubtitle: false,
       moveMode: .alwaysDisabled,
       shortcutHint: shortcutHint,
+      displayNameOverride: displayNameOverride,
       nestDepth: nestDepth,
       highlightSubtitle: highlight
     )

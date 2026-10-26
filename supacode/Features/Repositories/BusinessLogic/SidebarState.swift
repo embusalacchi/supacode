@@ -109,17 +109,21 @@ nonisolated struct SidebarState: Equatable, Sendable, Codable {
     /// Optional user-supplied tint applied to the sidebar header.
     /// `nil` means "default / no tint".
     var color: RepositoryColor?
+    /// Headers of this repository's group collapsed in the Pinned and Active sections.
+    var collapsedHighlightGroups: Set<HighlightGroup>
 
     init(
       collapsed: Bool = false,
       buckets: OrderedDictionary<BucketID, Bucket> = [:],
       title: String? = nil,
-      color: RepositoryColor? = nil
+      color: RepositoryColor? = nil,
+      collapsedHighlightGroups: Set<HighlightGroup> = []
     ) {
       self.collapsed = collapsed
       self.buckets = buckets
       self.title = title
       self.color = color
+      self.collapsedHighlightGroups = collapsedHighlightGroups
     }
 
     private enum SectionCodingKeys: String, CodingKey {
@@ -127,6 +131,7 @@ nonisolated struct SidebarState: Equatable, Sendable, Codable {
       case buckets
       case title
       case color
+      case collapsedHighlightGroups
     }
 
     init(from decoder: any Decoder) throws {
@@ -142,6 +147,9 @@ nonisolated struct SidebarState: Equatable, Sendable, Codable {
         ) ?? [:]
       self.title = try container.decodeIfPresent(String.self, forKey: .title)
       self.color = try container.decodeIfPresent(RepositoryColor.self, forKey: .color)
+      // `try?` so a malformed value drops just this field, like `collapsedBranchPrefixes`.
+      self.collapsedHighlightGroups =
+        (try? container.decodeIfPresent(Set<HighlightGroup>.self, forKey: .collapsedHighlightGroups)) ?? []
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -154,7 +162,17 @@ nonisolated struct SidebarState: Equatable, Sendable, Codable {
       // stays clean for repos the user never touched.
       try container.encodeIfPresent(title, forKey: .title)
       try container.encodeIfPresent(color, forKey: .color)
+      if !collapsedHighlightGroups.isEmpty {
+        try container.encode(collapsedHighlightGroups, forKey: .collapsedHighlightGroups)
+      }
     }
+  }
+
+  /// A header inside one repository's group in the Pinned or Active section.
+  nonisolated struct HighlightGroup: Hashable, Sendable, Codable {
+    var kind: SidebarStructure.HighlightKind
+    /// Branch-prefix header inside the group; `nil` is the repository header itself.
+    var branchPrefix: String?
   }
 
   nonisolated struct Bucket: Equatable, Sendable, Codable {
